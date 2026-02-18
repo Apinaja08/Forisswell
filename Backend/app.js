@@ -6,6 +6,7 @@ const rateLimit = require("express-rate-limit");
 
 const authRoutes = require("./routes/authRoutes");
 const treeRoutes = require("./routes/treeRoutes");
+const weatherCareRoutes = require("./routes/weatherCareRoutes");
 
 const app = express();
 
@@ -72,6 +73,7 @@ app.get("/api/health", (req, res) => {
 
 app.use("/api/auth", authRoutes);
 app.use("/api/trees", treeRoutes);
+app.use("/api/weather-care", weatherCareRoutes);
 
 app.use((req, res, next) => {
   const err = new Error("Route not found");
