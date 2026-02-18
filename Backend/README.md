@@ -22,20 +22,26 @@ Forisswell is a comprehensive tree care management platform that provides:
 ```
 Backend/
 ├── config/
-│   └── db.js              # MongoDB connection
+│   └── db.js                    # MongoDB connection
 ├── controllers/
-│   └── authController.js  # Authentication logic
+│   ├── authController.js        # Authentication logic
+│   ├── treeController.js        # Tree CRUD logic
+│   └── weatherCareController.js # Weather care logic
 ├── middleware/
-│   └── auth.js            # JWT protection middleware
+│   └── auth.js                  # JWT protection middleware
 ├── models/
-│   └── User.js            # User schema
+│   ├── User.js                  # User schema
+│   └── Tree.js                  # Tree schema
 ├── routes/
-│   ├── authRoutes.js      # Auth endpoints
-│   └── treeRoutes.js      # Tree endpoints
-├── .env                   # Environment variables
-├── app.js                 # Express app configuration
-├── Server.js              # Server entry point
-└── package.json           # Dependencies
+│   ├── authRoutes.js            # Auth endpoints
+│   ├── treeRoutes.js            # Tree endpoints
+│   └── weatherCareRoutes.js     # Weather care endpoints
+├── services/
+│   └── weatherService.js        # OpenWeatherMap API service
+├── .env                         # Environment variables
+├── app.js                       # Express app configuration
+├── Server.js                    # Server entry point
+└── package.json                 # Dependencies
 ```
 
 ## Getting Started
@@ -65,6 +71,7 @@ Backend/
    MONGO_URI=your_mongodb_connection_string
    JWT_SECRET=your_super_secure_secret_key_here
    JWT_EXPIRES_IN=7d
+   OPENWEATHER_API_KEY=your_openweathermap_api_key
    ```
 
 4. **Start the server:**
@@ -238,13 +245,172 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiIs...
 
 ---
 
-### Tree Routes
+### Tree Routes (Protected - Require Authentication)
 
-#### 9. Get Trees
+> **Note:** All tree routes require `Authorization: Bearer <token>` header.
+
+#### 9. Create Tree
+```
+POST http://localhost:5000/api/trees
+```
+**Headers:**
+```
+Authorization: Bearer eyJhbGciOiJIUzI1NiIs...
+Content-Type: application/json
+```
+**Body (raw JSON):**
+```json
+{
+  "name": "My Oak Tree",
+  "species": "Oak",
+  "plantedDate": "2025-06-15",
+  "status": "PLANTED",
+  "notes": "Planted in backyard",
+  "location": {
+    "type": "Point",
+    "coordinates": [79.8612, 6.9271],
+    "address": {
+      "formatted": "Colombo, Sri Lanka",
+      "city": "Colombo",
+      "country": "Sri Lanka"
+    }
+  }
+}
+```
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Tree created successfully",
+  "data": {
+    "tree": {
+      "_id": "67b5a1234abc123456789012",
+      "name": "My Oak Tree",
+      "species": "Oak",
+      "plantedDate": "2025-06-15T00:00:00.000Z",
+      "status": "PLANTED",
+      "location": { ... },
+      "owner": { ... }
+    }
+  }
+}
+```
+
+---
+
+#### 10. Get All Trees
 ```
 GET http://localhost:5000/api/trees
 ```
-**Body:** None
+**Headers:**
+```
+Authorization: Bearer eyJhbGciOiJIUzI1NiIs...
+```
+**Query Parameters (optional):**
+- `species` - Filter by species
+- `status` - Filter by status (PLANTED, GROWING, MATURE, DEAD)
+
+**Example:** `GET /api/trees?species=Oak&status=PLANTED`
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Trees fetched successfully",
+  "count": 2,
+  "data": {
+    "trees": [ ... ]
+  }
+}
+```
+
+---
+
+#### 11. Get Single Tree
+```
+GET http://localhost:5000/api/trees/:id
+```
+**Headers:**
+```
+Authorization: Bearer eyJhbGciOiJIUzI1NiIs...
+```
+**Params:** Replace `:id` with the tree's `_id`
+
+**Example:** `GET /api/trees/67b5a1234abc123456789012`
+
+---
+
+#### 12. Update Tree
+```
+PUT http://localhost:5000/api/trees/:id
+```
+**Headers:**
+```
+Authorization: Bearer eyJhbGciOiJIUzI1NiIs...
+Content-Type: application/json
+```
+**Body (raw JSON):**
+```json
+{
+  "status": "GROWING",
+  "notes": "Tree is growing well"
+}
+```
+
+---
+
+#### 13. Delete Tree
+```
+DELETE http://localhost:5000/api/trees/:id
+```
+**Headers:**
+```
+Authorization: Bearer eyJhbGciOiJIUzI1NiIs...
+```
+**Params:** Replace `:id` with the tree's `_id`
+
+---
+
+### Weather-Based Tree Care Routes (Protected)
+
+#### 14. Get Weather for Tree
+```
+GET http://localhost:5000/api/weather-care/:treeId
+```
+**Headers:**
+```
+Authorization: Bearer eyJhbGciOiJIUzI1NiIs...
+```
+**Params:** Replace `:treeId` with the tree's `_id`
+
+**Example:** `GET /api/weather-care/67b5a1234abc123456789012`
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Weather data fetched successfully",
+  "data": {
+    "treeId": "67b5a1234abc123456789012",
+    "treeName": "My Oak Tree",
+    "location": {
+      "coordinates": [79.8612, 6.9271],
+      "address": {
+        "formatted": "Colombo, Sri Lanka",
+        "city": "Colombo",
+        "country": "Sri Lanka"
+      }
+    },
+    "weather": {
+      "temperature": 28.5,
+      "humidity": 75,
+      "rainfall": 0,
+      "windSpeed": 3.2,
+      "description": "clear sky"
+    }
+  }
+}
+```
 
 ---
 
@@ -305,7 +471,12 @@ GET http://localhost:5000/api/trees
 | 7 | GET | `/api/auth/me` | Yes | - |
 | 8 | PUT | `/api/auth/update-password` | Yes | currentPassword, newPassword |
 | 9 | POST | `/api/auth/logout` | Yes | - |
-| 10 | GET | `/api/trees` | No | - |
+| 10 | POST | `/api/trees` | Yes | name, species, plantedDate, status, notes, location |
+| 11 | GET | `/api/trees` | Yes | - |
+| 12 | GET | `/api/trees/:id` | Yes | - |
+| 13 | PUT | `/api/trees/:id` | Yes | (any tree fields) |
+| 14 | DELETE | `/api/trees/:id` | Yes | - |
+| 15 | GET | `/api/weather-care/:treeId` | Yes | - |
 
 ---
 
@@ -354,6 +525,7 @@ The API returns consistent error responses:
 | JWT_SECRET | JWT signing secret | - |
 | JWT_EXPIRES_IN | Token expiration | 7d |
 | CLIENT_URL | Frontend URL for CORS | http://localhost:5173 |
+| OPENWEATHER_API_KEY | OpenWeatherMap API key | - |
 
 ---
 
