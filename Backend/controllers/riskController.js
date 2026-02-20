@@ -45,8 +45,7 @@ exports.getHighRisks = async (req, res) => {
     const options = {
       page: parseInt(page),
       limit: parseInt(limit),
-      sort: { [sortBy]: order === 'desc' ? -1 : 1 },
-      populate: 'actions'
+      sort: { [sortBy]: order === 'desc' ? -1 : 1 }
     };
 
     const risks = await Risk.find(query)
@@ -84,8 +83,6 @@ exports.updateRisk = async (req, res) => {
     delete updates._id;
     delete updates.analysisDate;
     delete updates.satelliteData;
-
-    updates['metadata.updatedAt'] = new Date();
 
     const risk = await Risk.findByIdAndUpdate(
       id,
@@ -187,7 +184,7 @@ exports.getRiskStats = async (req, res) => {
         byLevel: stats,
         total,
         critical,
-        criticalPercentage: (critical / total * 100).toFixed(2)
+        criticalPercentage: total > 0 ? (critical / total * 100).toFixed(2) : '0.00'
       }
     });
   } catch (error) {

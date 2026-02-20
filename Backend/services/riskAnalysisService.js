@@ -1,4 +1,4 @@
-// server/services/riskAnalysisService.js
+// services/riskAnalysisService.js
 const Risk = require('../models/Risk');
 const collectEarthService = require('./collectEarthService');
 const logger = require('../utils/logger');
@@ -13,6 +13,8 @@ class RiskAnalysisService {
 
   async analyzeArea(polygonData) {
     try {
+      logger.info(`Analyzing area: ${polygonData.name || 'unnamed'}`);
+
       // Fetch satellite data
       const treeCoverData = await collectEarthService.analyzeTreeCover(polygonData.coordinates);
       const deforestationData = await collectEarthService.detectDeforestation(polygonData.coordinates);
@@ -22,7 +24,7 @@ class RiskAnalysisService {
       const factors = {
         treeCoverLoss: 100 - (treeCoverData.treeCoverPercentage || 0),
         degradationRate: this.calculateDegradationRate(historicalData),
-        fireRisk: this.calculateFireRisk(polygonData, historicalData),
+        fireRisk: this.calculateFireRisk(historicalData),
         encroachmentRisk: await this.calculateEncroachmentRisk(polygonData),
         illegalLoggingProbability: deforestationData.hasDeforestation ? 75 : 15
       };
@@ -33,7 +35,7 @@ class RiskAnalysisService {
 
       // Create risk assessment
       const riskAssessment = new Risk({
-        polygonId: polygonData.id || new mongoose.Types.ObjectId(),
+        polygonId: polygonData.id || `polygon-${Date.now()}`,
         name: polygonData.name || 'Unnamed Area',
         coordinates: polygonData.coordinates,
         riskLevel,
@@ -54,9 +56,18 @@ class RiskAnalysisService {
       });
 
       await riskAssessment.save();
-      
-      // Emit real-time update via WebSocket
-      this.emitRiskUpdate(riskAssessment);
+      logger.info(`Risk assessment created for ${riskAssessment.name} with level: ${riskLevel}`);
+
+      // Emit real-time update via WebSocket if available
+      if (global.io) {
+        global.io.emit('risk-update', {
+          id: riskAssessment._id,
+          name: riskAssessment.name,
+          riskLevel: riskAssessment.riskLevel,
+          riskScore: riskAssessment.riskScore,
+          timestamp: new Date()
+        });
+      }
 
       return riskAssessment;
     } catch (error) {
@@ -68,19 +79,16 @@ class RiskAnalysisService {
   calculateDegradationRate(historicalData) {
     if (!historicalData.treeCover || historicalData.treeCover.length < 2) return 0;
     
-    const recent = historicalData.treeCover[0];
-    const old = historicalData.treeCover[historicalData.treeCover.length - 1];
+    const recent = historicalData.treeCover[0] || 50;
+    const old = historicalData.treeCover[historicalData.treeCover.length - 1] || 50;
     const change = ((old - recent) / old) * 100;
     
     return Math.max(0, Math.min(100, change));
   }
 
-  calculateFireRisk(polygonData, historicalData) {
-    // Simplified fire risk calculation
-    // In production, this would use weather data, vegetation dryness, etc.
+  calculateFireRisk(historicalData) {
     const ndvi = historicalData.ndvi?.reduce((a, b) => a + b, 0) / historicalData.ndvi?.length || 0.5;
     const drynessFactor = (1 - ndvi) * 100;
-    
     return Math.min(100, drynessFactor + (Math.random() * 20));
   }
 
@@ -110,8 +118,8 @@ class RiskAnalysisService {
   calculateHistoricalChange(historicalData, years) {
     if (!historicalData.treeCover || historicalData.treeCover.length < years) return 0;
     
-    const recent = historicalData.treeCover[0];
-    const past = historicalData.treeCover[years - 1];
+    const recent = historicalData.treeCover[0] || 50;
+    const past = historicalData.treeCover[years - 1] || 50;
     return ((past - recent) / past) * 100;
   }
 
@@ -151,18 +159,6 @@ class RiskAnalysisService {
     }
 
     return actions;
-  }
-
-  emitRiskUpdate(riskAssessment) {
-    // WebSocket emission would be implemented here
-    if (global.io) {
-      global.io.emit('risk-update', {
-        id: riskAssessment._id,
-        riskLevel: riskAssessment.riskLevel,
-        riskScore: riskAssessment.riskScore,
-        timestamp: new Date()
-      });
-    }
   }
 }
 

@@ -2,7 +2,7 @@
 const express = require('express');
 const router = express.Router();
 // const rateLimit = require('express-rate-limit');
-const riskController = require('../controllers/riskController');
+const riskController = require('../controllers/riskController.js');
 const { validatePolygon } = require('../middleware/validation');
 
 // Rate limiting for analysis endpoint
@@ -13,7 +13,7 @@ const { validatePolygon } = require('../middleware/validation');
 // });
 
 // CRUD Operations
-router.post('/analyze', analysisLimiter, validatePolygon, riskController.analyzeRisk);
+router.post('/analyze', validatePolygon, riskController.analyzeRisk);
 router.get('/high', riskController.getHighRisks);
 router.get('/stats', riskController.getRiskStats);
 router.get('/:id', riskController.getRiskById);
