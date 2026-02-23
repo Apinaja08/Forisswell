@@ -37,7 +37,10 @@ class RiskAnalysisService {
       const riskAssessment = new Risk({
         polygonId: polygonData.id || `polygon-${Date.now()}`,
         name: polygonData.name || 'Unnamed Area',
-        coordinates: polygonData.coordinates,
+        coordinates: {                          
+          type: 'Polygon',
+          coordinates: polygonData.coordinates
+        },
         riskLevel,
         riskScore,
         factors,

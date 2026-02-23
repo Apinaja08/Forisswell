@@ -4,7 +4,9 @@ const router = express.Router();
 // const rateLimit = require('express-rate-limit');
 const riskController = require('../controllers/riskController.js');
 const { validatePolygon } = require('../middleware/validation');
+const { protect } = require("../middleware/auth");
 
+router.use(protect);
 // Rate limiting for analysis endpoint
 // const analysisLimiter = rateLimit({
 //   windowMs: 15 * 60 * 1000, // 15 minutes
@@ -13,11 +15,11 @@ const { validatePolygon } = require('../middleware/validation');
 // });
 
 // CRUD Operations
-router.post('/analyze', validatePolygon, riskController.analyzeRisk);
-router.get('/high', riskController.getHighRisks);
-router.get('/stats', riskController.getRiskStats);
-router.get('/:id', riskController.getRiskById);
-router.put('/update/:id', riskController.updateRisk);
-router.delete('/:id', riskController.deleteRisk);
+router.post('/analyze', validatePolygon,protect, riskController.analyzeRisk);
+router.get('/high', protect, riskController.getHighRisks);
+router.get('/stats', protect, riskController.getRiskStats);
+router.get('/:id', protect, riskController.getRiskById);
+router.put('/update/:id', protect, riskController.updateRisk);
+router.delete('/:id', protect, riskController.deleteRisk);
 
 module.exports = router;

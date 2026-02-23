@@ -20,15 +20,15 @@ const validatePolygon = (req, res, next) => {
     }
 
     // Validate GeoJSON format
-    if (polygon.coordinates.type !== 'Polygon') {
-      return res.status(400).json({
+    if (polygon.type !== 'Polygon') {
+        return res.status(400).json({
         success: false,
         error: 'Coordinates must be of type Polygon'
       });
     }
 
     // Validate coordinates array
-    const coordinates = polygon.coordinates.coordinates;
+    const coordinates = polygon.coordinates;
     if (!Array.isArray(coordinates) || coordinates.length === 0) {
       return res.status(400).json({
         success: false,
