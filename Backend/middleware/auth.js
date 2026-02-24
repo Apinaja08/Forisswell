@@ -1,5 +1,6 @@
 const jwt = require("jsonwebtoken");
 const User = require("../models/User");
+const Volunteer = require("../models/Volunteer");
 
 const createError = (statusCode, message) => {
   const err = new Error(message);
@@ -29,7 +30,15 @@ exports.protect = async (req, res, next) => {
     }
 
     const decoded = jwt.verify(token, jwtSecret);
-    const user = await User.findById(decoded.id).select("-password");
+
+    // Route token to the correct collection based on userType in the JWT payload.
+    // Volunteer tokens are issued by volunteerController with userType: "volunteer".
+    let user;
+    if (decoded.userType === "volunteer") {
+      user = await Volunteer.findById(decoded.id).select("-password");
+    } else {
+      user = await User.findById(decoded.id).select("-password");
+    }
 
     if (!user) {
       return next(createError(401, "User not found"));

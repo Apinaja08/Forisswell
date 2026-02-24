@@ -1,0 +1,608 @@
+{
+  "info": {
+    "name": "Forisswell — Volunteer & Alert APIs",
+    "description": "Complete test suite for the Volunteer & Alert modules.\n\nIMPORTANT — Run in this order:\n1. Register Volunteer\n2. Login Volunteer  → token auto-saved to {{volunteerToken}}\n3. Login Admin      → token auto-saved to {{adminToken}}\n4. Create Tree (copy returned _id into {{treeId}})\n5. Create Alert\n6. (as volunteer) Accept → Start → Resolve\n7. Admin checks",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl",        "value": "http://localhost:5000" },
+    { "key": "volunteerToken", "value": "" },
+    { "key": "adminToken",     "value": "" },
+    { "key": "treeId",         "value": "" },
+    { "key": "alertId",        "value": "" },
+    { "key": "volunteerId",    "value": "" }
+  ],
+  "item": [
+
+    {
+      "name": "🌱 1. Volunteer Auth",
+      "item": [
+
+        {
+          "name": "Register Volunteer",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.token) {",
+                  "  pm.collectionVariables.set('volunteerToken', res.token);",
+                  "  pm.collectionVariables.set('volunteerId', res.data.volunteer._id);",
+                  "  console.log('✅ volunteerToken saved');",
+                  "}",
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "pm.test('Has token', () => pm.expect(res.token).to.be.a('string'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/volunteers/register",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Test Volunteer\",\n  \"email\": \"volunteer@test.com\",\n  \"password\": \"password123\",\n  \"phone\": \"+94771234567\",\n  \"location\": {\n    \"type\": \"Point\",\n    \"coordinates\": [80.2707, 6.9271]\n  }\n}"
+            }
+          }
+        },
+
+        {
+          "name": "Register Volunteer 2 (Nearby)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/volunteers/register",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Nearby Volunteer\",\n  \"email\": \"volunteer2@test.com\",\n  \"password\": \"password123\",\n  \"phone\": \"+94779999999\",\n  \"location\": {\n    \"type\": \"Point\",\n    \"coordinates\": [80.2750, 6.9300]\n  }\n}"
+            }
+          }
+        },
+
+        {
+          "name": "Register Volunteer 3 (Far Away — 15km)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/volunteers/register",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Far Volunteer\",\n  \"email\": \"farvolunteer@test.com\",\n  \"password\": \"password123\",\n  \"phone\": \"+94770000000\",\n  \"location\": {\n    \"type\": \"Point\",\n    \"coordinates\": [80.3500, 6.9900]\n  }\n}"
+            }
+          }
+        },
+
+        {
+          "name": "Login Volunteer",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.token) {",
+                  "  pm.collectionVariables.set('volunteerToken', res.token);",
+                  "  pm.collectionVariables.set('volunteerId', res.data.volunteer._id);",
+                  "  console.log('✅ volunteerToken saved:', res.token.substring(0,30) + '...');",
+                  "}",
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Has token', () => pm.expect(res.token).to.be.a('string'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/volunteers/login",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"volunteer@test.com\",\n  \"password\": \"password123\"\n}"
+            }
+          }
+        },
+
+        {
+          "name": "Get My Profile",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{volunteerToken}}" }],
+            "url": "{{baseUrl}}/api/volunteers/me"
+          }
+        },
+
+        {
+          "name": "Update My Profile",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Content-Type",  "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{volunteerToken}}" }
+            ],
+            "url": "{{baseUrl}}/api/volunteers/me",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Updated Volunteer Name\",\n  \"phone\": \"+94771111111\",\n  \"location\": {\n    \"type\": \"Point\",\n    \"coordinates\": [80.2710, 6.9275]\n  }\n}"
+            }
+          }
+        },
+
+        {
+          "name": "Get My Alerts (volunteer history)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{volunteerToken}}" }],
+            "url": "{{baseUrl}}/api/volunteers/me/alerts"
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "🔑 2. Admin Login",
+      "item": [
+        {
+          "name": "Login Admin",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.token) {",
+                  "  pm.collectionVariables.set('adminToken', res.token);",
+                  "  console.log('✅ adminToken saved');",
+                  "}",
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/auth/login",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@forisswell.com\",\n  \"password\": \"admin123456\"\n}"
+            }
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "🌳 3. Setup — Get a Tree ID",
+      "item": [
+        {
+          "name": "Get Trees (copy an _id into treeId variable)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.data && res.data.trees && res.data.trees.length > 0) {",
+                  "  const id = res.data.trees[0]._id;",
+                  "  pm.collectionVariables.set('treeId', id);",
+                  "  console.log('✅ treeId auto-set to:', id);",
+                  "} else {",
+                  "  console.warn('⚠️ No trees found — create one first');",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{volunteerToken}}" }],
+            "url": "{{baseUrl}}/api/trees"
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "🚨 4. Alert CRUD",
+      "item": [
+
+        {
+          "name": "Create Alert (weather — high temperature)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.data && res.data.alert) {",
+                  "  pm.collectionVariables.set('alertId', res.data.alert._id);",
+                  "  console.log('✅ alertId saved:', res.data.alert._id);",
+                  "  console.log('Notified volunteers:', res.data.notifiedCount);",
+                  "}",
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type",  "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{adminToken}}" }
+            ],
+            "url": "{{baseUrl}}/api/alerts",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"treeId\": \"{{treeId}}\",\n  \"alertType\": \"high_temperature\",\n  \"alertSource\": \"weather\",\n  \"weatherSnapshot\": {\n    \"temperature\": 38.5,\n    \"windSpeed\": 15,\n    \"humidity\": 65,\n    \"rainfall\": 0,\n    \"description\": \"clear sky, extreme heat\"\n  },\n  \"thresholdBreached\": {\n    \"field\": \"temperature\",\n    \"value\": 38.5,\n    \"threshold\": 35\n  }\n}"
+            }
+          }
+        },
+
+        {
+          "name": "Create Alert (weather — high wind)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type",  "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{adminToken}}" }
+            ],
+            "url": "{{baseUrl}}/api/alerts",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"treeId\": \"{{treeId}}\",\n  \"alertType\": \"high_wind\",\n  \"alertSource\": \"weather\",\n  \"weatherSnapshot\": {\n    \"temperature\": 28,\n    \"windSpeed\": 75,\n    \"humidity\": 80,\n    \"rainfall\": 10,\n    \"description\": \"strong wind\"\n  },\n  \"thresholdBreached\": {\n    \"field\": \"windSpeed\",\n    \"value\": 75,\n    \"threshold\": 60\n  }\n}"
+            }
+          }
+        },
+
+        {
+          "name": "Create Alert (calendar event)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type",  "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{adminToken}}" }
+            ],
+            "url": "{{baseUrl}}/api/alerts",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"treeId\": \"{{treeId}}\",\n  \"alertType\": \"calendar_event\",\n  \"alertSource\": \"calendar\",\n  \"calendarEventId\": \"google_event_abc123\",\n  \"thresholdBreached\": {\n    \"field\": \"calendar_event\",\n    \"value\": \"Tree Pruning — Oak Tree\",\n    \"threshold\": \"Scheduled care: pruning\"\n  }\n}"
+            }
+          }
+        },
+
+        {
+          "name": "Get All Alerts (admin — no filter)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": "{{baseUrl}}/api/alerts"
+          }
+        },
+
+        {
+          "name": "Get Alerts — filter ?status=searching",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/alerts?status=searching",
+              "query": [{ "key": "status", "value": "searching" }]
+            }
+          }
+        },
+
+        {
+          "name": "Get Alerts — filter ?status=resolved",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/alerts?status=resolved",
+              "query": [{ "key": "status", "value": "resolved" }]
+            }
+          }
+        },
+
+        {
+          "name": "Get Alerts — filter ?alertSource=weather",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/alerts?alertSource=weather",
+              "query": [{ "key": "alertSource", "value": "weather" }]
+            }
+          }
+        },
+
+        {
+          "name": "Get Alert by ID (includes weatherSnapshot)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{volunteerToken}}" }],
+            "url": "{{baseUrl}}/api/alerts/{{alertId}}"
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "🤝 5. Volunteer Workflow (Uber-style)",
+      "item": [
+
+        {
+          "name": "STEP 1 — Accept Alert",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const res = pm.response.json();",
+                  "pm.test('Status 200 — accepted', () => pm.response.to.have.status(200));",
+                  "pm.test('Alert status is accepted', () => {",
+                  "  pm.expect(res.data.alert.status).to.equal('accepted');",
+                  "});",
+                  "console.log('Alert status:', res.data?.alert?.status);",
+                  "console.log('Assigned volunteer:', res.data?.alert?.assignedVolunteer);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Authorization", "value": "Bearer {{volunteerToken}}" }],
+            "url": "{{baseUrl}}/api/alerts/{{alertId}}/accept"
+          }
+        },
+
+        {
+          "name": "STEP 1b — Race Condition Test (try to accept same alert again — expect 400)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 400 — already accepted', () => pm.response.to.have.status(400));",
+                  "console.log('Race condition response:', pm.response.json().message);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Authorization", "value": "Bearer {{volunteerToken}}" }],
+            "url": "{{baseUrl}}/api/alerts/{{alertId}}/accept"
+          }
+        },
+
+        {
+          "name": "STEP 2 — Start Work",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const res = pm.response.json();",
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Alert status is in_progress', () => {",
+                  "  pm.expect(res.data.alert.status).to.equal('in_progress');",
+                  "});",
+                  "console.log('Alert status:', res.data?.alert?.status);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Authorization", "value": "Bearer {{volunteerToken}}" }],
+            "url": "{{baseUrl}}/api/alerts/{{alertId}}/start"
+          }
+        },
+
+        {
+          "name": "STEP 3 — Resolve Alert (Work Complete)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const res = pm.response.json();",
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Alert status is resolved', () => {",
+                  "  pm.expect(res.data.alert.status).to.equal('resolved');",
+                  "});",
+                  "pm.test('Success message present', () => {",
+                  "  pm.expect(res.message).to.include('completed');",
+                  "});",
+                  "console.log('✅ Full workflow complete!');",
+                  "console.log('Alert status:', res.data?.alert?.status);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Authorization", "value": "Bearer {{volunteerToken}}" }],
+            "url": "{{baseUrl}}/api/alerts/{{alertId}}/resolve"
+          }
+        },
+
+        {
+          "name": "Verify — Volunteer is Available Again",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const res = pm.response.json();",
+                  "pm.test('Volunteer is available again', () => {",
+                  "  pm.expect(res.data.volunteer.availabilityStatus).to.equal('available');",
+                  "});",
+                  "console.log('Volunteer status:', res.data?.volunteer?.availabilityStatus);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{volunteerToken}}" }],
+            "url": "{{baseUrl}}/api/volunteers/me"
+          }
+        },
+
+        {
+          "name": "Get My Alerts (confirm resolved shows up)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{volunteerToken}}" }],
+            "url": "{{baseUrl}}/api/volunteers/me/alerts"
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "🛡️ 6. Admin Panel",
+      "item": [
+
+        {
+          "name": "Get All Volunteers",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": "{{baseUrl}}/api/admin/volunteers"
+          }
+        },
+
+        {
+          "name": "Get Available Volunteers only",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/volunteers?availabilityStatus=available",
+              "query": [{ "key": "availabilityStatus", "value": "available" }]
+            }
+          }
+        },
+
+        {
+          "name": "Get All Alerts (admin)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": "{{baseUrl}}/api/admin/alerts"
+          }
+        },
+
+        {
+          "name": "Cancel Alert (admin)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const res = pm.response.json();",
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Alert is cancelled', () => {",
+                  "  pm.expect(res.data.alert.status).to.equal('cancelled');",
+                  "});",
+                  "console.log('Alert status after cancel:', res.data?.alert?.status);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": "{{baseUrl}}/api/admin/alerts/{{alertId}}/cancel"
+          }
+        },
+
+        {
+          "name": "Trigger Weather Check (manual)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": "{{baseUrl}}/api/admin/weather-check"
+          }
+        },
+
+        {
+          "name": "Trigger Calendar Check (manual)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": "{{baseUrl}}/api/admin/calendar-check"
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "🔒 7. Auth Guard Tests",
+      "item": [
+
+        {
+          "name": "Volunteer token on admin route → expect 403",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 403 — role not authorized', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{volunteerToken}}" }],
+            "url": "{{baseUrl}}/api/admin/volunteers"
+          }
+        },
+
+        {
+          "name": "No token → expect 401",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 401 — no token', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/volunteers/me"
+          }
+        },
+
+        {
+          "name": "Admin token on volunteer-only route (accept) → expect 403",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 403 — admin cannot accept alert', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": "{{baseUrl}}/api/alerts/{{alertId}}/accept"
+          }
+        }
+      ]
+    }
+
+  ]
+}
