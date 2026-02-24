@@ -9,6 +9,7 @@ const authRoutes = require("./routes/authRoutes");
 const treeRoutes = require("./routes/treeRoutes");
 const weatherCareRoutes = require("./routes/weatherCareRoutes");
 const riskRoutes = require("./routes/riskRoutes");
+const eventRoutes = require("./routes/eventRoutes");
 
 const app = express();
 
@@ -77,6 +78,7 @@ app.use("/api/auth", authRoutes);
 app.use("/api/trees", treeRoutes);
 app.use("/api/weather-care", weatherCareRoutes);
 app.use("/api/risk", riskRoutes);
+app.use("/api/events", eventRoutes);
 
 app.use((req, res, next) => {
   const err = new Error("Route not found");
