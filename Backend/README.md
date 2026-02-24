@@ -37,6 +37,7 @@ Backend/
 │   ├── treeRoutes.js            # Tree endpoints
 │   └── weatherCareRoutes.js     # Weather care endpoints
 ├── services/
+│   ├── reverseGeocodingService.js # Reverse geocoding (Nominatim)
 │   └── weatherService.js        # OpenWeatherMap API service
 ├── .env                         # Environment variables
 ├── app.js                       # Express app configuration
@@ -269,11 +270,7 @@ Content-Type: application/json
   "location": {
     "type": "Point",
     "coordinates": [79.8612, 6.9271],
-    "address": {
-      "formatted": "Colombo, Sri Lanka",
-      "city": "Colombo",
-      "country": "Sri Lanka"
-    }
+    "address": {}
   }
 }
 ```
@@ -526,6 +523,11 @@ The API returns consistent error responses:
 | JWT_EXPIRES_IN | Token expiration | 7d |
 | CLIENT_URL | Frontend URL for CORS | http://localhost:5173 |
 | OPENWEATHER_API_KEY | OpenWeatherMap API key | - |
+| NOMINATIM_BASE_URL | Reverse geocoding base URL | https://nominatim.openstreetmap.org |
+| NOMINATIM_USER_AGENT | Reverse geocoding User-Agent header | Forisswell/1.0 (...) |
+| NOMINATIM_EMAIL | Reverse geocoding contact email (optional) | - |
+| NOMINATIM_ACCEPT_LANGUAGE | Reverse geocoding response language (optional) | en |
+| NOMINATIM_TIMEOUT_MS | Reverse geocoding timeout (ms) | 4000 |
 
 ---
 
