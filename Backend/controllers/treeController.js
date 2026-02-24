@@ -1,4 +1,5 @@
 const Tree = require("../models/Tree");
+const { reverseGeocode } = require("../services/reverseGeocodingService");
 
 const asyncHandler =
   (fn) =>
@@ -20,6 +21,27 @@ const canAccessTree = (user, tree) => {
 // @route   POST /api/trees (PROTECTED)
 exports.createTree = asyncHandler(async (req, res) => {
   const treeData = { ...req.body, owner: req.user.id };
+
+  const coordinates = treeData?.location?.coordinates;
+  if (Array.isArray(coordinates) && coordinates.length === 2) {
+    const lon = Number(coordinates[0]);
+    const lat = Number(coordinates[1]);
+
+    if (Number.isFinite(lon) && Number.isFinite(lat)) {
+      console.log("[createTree] Reverse geocoding:", { lon, lat });
+      const address = await reverseGeocode(lon, lat);
+      if (address) {
+        treeData.location = treeData.location || {};
+        treeData.location.address = address;
+        console.log("[createTree] Address resolved:", address);
+      } else {
+        console.warn("[createTree] Reverse geocoding failed/empty; saving without address.");
+      }
+    } else {
+      console.warn("[createTree] Invalid coordinates; skipping reverse geocoding:", coordinates);
+    }
+  }
+
   const tree = await Tree.create(treeData);
 
   const populatedTree = await Tree.findById(tree._id).populate(
@@ -96,7 +118,44 @@ exports.updateTree = asyncHandler(async (req, res) => {
   delete updates.createdAt;
   delete updates.updatedAt;
 
+  const incomingCoordinates = updates?.location?.coordinates;
+  const hasCoordinateUpdate =
+    updates?.location &&
+    Object.prototype.hasOwnProperty.call(updates.location, "coordinates");
+
   Object.assign(tree, updates);
+
+  if (hasCoordinateUpdate) {
+    if (Array.isArray(incomingCoordinates) && incomingCoordinates.length === 2) {
+      const lon = Number(incomingCoordinates[0]);
+      const lat = Number(incomingCoordinates[1]);
+
+      if (Number.isFinite(lon) && Number.isFinite(lat)) {
+        console.log("[updateTree] Reverse geocoding:", { lon, lat });
+        const address = await reverseGeocode(lon, lat);
+        if (address) {
+          tree.location.address = address;
+          console.log("[updateTree] Address resolved:", address);
+        } else {
+          tree.location.address = undefined;
+          console.warn(
+            "[updateTree] Reverse geocoding failed/empty; clearing location.address."
+          );
+        }
+      } else {
+        console.warn(
+          "[updateTree] Invalid coordinates; skipping reverse geocoding:",
+          incomingCoordinates
+        );
+      }
+    } else {
+      console.warn(
+        "[updateTree] Coordinates provided but not [lon, lat]; skipping reverse geocoding:",
+        incomingCoordinates
+      );
+    }
+  }
+
   await tree.save();
 
   const populatedTree = await Tree.findById(tree._id).populate(
@@ -130,4 +189,3 @@ exports.deleteTree = asyncHandler(async (req, res) => {
     message: "Tree deleted successfully",
   });
 });
-
