@@ -1,5 +1,6 @@
 // controllers/eventController.js
 const Event = require('../models/Event');
+const User = require('../models/User');
 const calendarService = require('../services/calenderService');
 const notificationService = require('../services/notificationService');
 
@@ -11,7 +12,7 @@ const createEvent = async (req, res) => {
     const eventData = {
       ...req.body,
       createdBy: req.user.id,
-      currentParticipants: 1, // Creator automatically joins
+      currentParticipants: 1,
       participants: [{
         user: req.user.id,
         joinedAt: new Date(),
@@ -410,7 +411,7 @@ const deleteEvent = async (req, res) => {
       }
     }
 
-    await event.remove();
+    await event.deleteOne();
 
     res.json({
       success: true,
