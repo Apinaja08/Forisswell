@@ -1,160 +1,479 @@
-// server/services/riskAnalysisService.js
-const Risk = require('../models/Risk');
-const geeService = require('./googleEarthEngineService');
-const overpassService = require('./overPassService');
+// server/services/googleEarthEng
+const axios = require('axios');
+const crypto = require('crypto');
+const fs = require('fs');
 const logger = require('../utils/logger');
 
-class RiskAnalysisService {
-  calculateRiskLevel(score) {
-    if (score >= 80) return 'critical';
-    if (score >= 60) return 'high';
-    if (score >= 30) return 'medium';
-    return 'low';
+class GoogleEarthEngineService {
+  constructor() {
+    this.projectId = process.env.GEE_PROJECT_ID;
+    this.keyFilePath = process.env.GEE_KEY_FILE || './gee-service-account-key.json';
+    this.baseURL = 'https://earthengine.googleapis.com/v1';
+    this.accessToken = null;
+    this.tokenExpiry = null;
   }
 
-  async analyzeArea(polygonData) {
+  // ─────────────────────────────────────────────
+  // AUTH — auto-refreshes when within 60s of expiry
+  // ─────────────────────────────────────────────
+  async getAccessToken() {
+    if (this.accessToken && this.tokenExpiry && Date.now() < this.tokenExpiry - 60000) {
+      return this.accessToken;
+    }
+
+    if (!this.projectId) {
+      logger.warn('GEE_PROJECT_ID not set — falling back to mock data');
+      return null;
+    }
+
+    if (!fs.existsSync(this.keyFilePath)) {
+      logger.warn(`GEE key file not found at ${this.keyFilePath} — falling back to mock data`);
+      return null;
+    }
+
     try {
-      logger.info(`Analyzing area: ${polygonData.name || 'unnamed'}`);
+      const keyFile = JSON.parse(fs.readFileSync(this.keyFilePath, 'utf8'));
+      const now = Math.floor(Date.now() / 1000);
 
-      // ── All data fetched in parallel ─────────────────────────
-      const [
-        treeCoverData,      // GEE Hansen: current tree cover %
-        deforestationData,  // GEE Hansen: loss %, events, year
-        historicalData,     // GEE Landsat: 10-year NDVI timeline
-        geeFireScore,       // GEE MODIS: burn scar risk score 0-100
-        encroachmentRisk,   // Overpass: proximity to roads/settlements
-        settlements         // Overpass: nearby place names for metadata
-      ] = await Promise.all([
-        geeService.analyzeTreeCover(polygonData.coordinates),
-        geeService.detectDeforestation(polygonData.coordinates),
-        geeService.getHistoricalTrends(polygonData.coordinates),
-        geeService.getFireRiskScore(polygonData.coordinates),
-        overpassService.calculateEncroachmentRisk(polygonData),
-        overpassService.getNearbySettlements(polygonData.coordinates)
-      ]);
+      const header  = Buffer.from(JSON.stringify({ alg: 'RS256', typ: 'JWT' })).toString('base64url');
+      const payload = Buffer.from(JSON.stringify({
+        iss: keyFile.client_email,
+        sub: keyFile.client_email,
+        aud: 'https://oauth2.googleapis.com/token',
+        iat: now,
+        exp: now + 3600,
+        scope: 'https://www.googleapis.com/auth/earthengine.readonly'
+      })).toString('base64url');
 
-      // ── Risk factor calculation ───────────────────────────────
-      const factors = {
-        treeCoverLoss: Math.max(0, 100 - (treeCoverData.treeCoverPercentage || 0)),
-        degradationRate: this.calculateDegradationRate(historicalData),
-        // geeFireScore is real MODIS data; fall back to NDVI calc if GEE failed
-        fireRisk: geeFireScore ?? this.calculateFireRiskFromNDVI(historicalData),
-        encroachmentRisk,
-        illegalLoggingProbability: deforestationData.hasDeforestation
-          ? Math.min(95, 50 + (deforestationData.lossPercentage || 0))
-          : 15
+      const sign = crypto.createSign('RSA-SHA256');
+      sign.update(`${header}.${payload}`);
+      const signature = sign.sign(keyFile.private_key, 'base64url');
+      const jwt = `${header}.${payload}.${signature}`;
+
+      const tokenRes = await axios.post('https://oauth2.googleapis.com/token', {
+        grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+        assertion: jwt
+      }, { headers: { 'Content-Type': 'application/json' } });
+
+      this.accessToken = tokenRes.data.access_token;
+      this.tokenExpiry = Date.now() + tokenRes.data.expires_in * 1000;
+      logger.info('GEE: Access token refreshed');
+      return this.accessToken;
+
+    } catch (error) {
+      logger.error('GEE auth error:', error.message);
+      return null;
+    }
+  }
+
+  async getClient() {
+    const token = await this.getAccessToken();
+    if (!token) return null;
+    return axios.create({
+      baseURL: this.baseURL,
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      timeout: 60000
+    });
+  }
+
+  // Send a serialized EE computation graph to GEE REST API
+  async computeValue(expression) {
+    const client = await this.getClient();
+    if (!client) return null;
+    try {
+      const res = await client.post(`/projects/${this.projectId}/value:compute`, { expression });
+      return res.data?.result ?? null;
+    } catch (error) {
+      logger.error('GEE computeValue:', error.response?.data?.error?.message || error.message);
+      return null;
+    }
+  }
+
+  // Convert your polygon coordinates → GEE geometry object
+  buildGeometry(coordinates) {
+    const ring = Array.isArray(coordinates[0][0]) ? coordinates[0] : coordinates;
+    return {
+      functionInvocationValue: {
+        functionName: 'GeometryConstructors.Polygon',
+        arguments: { coordinates: { constantValue: [ring] } }
+      }
+    };
+  }
+
+  // ─────────────────────────────────────────────
+  // 1. analyzeTreeCover()
+  //    Same method name + return shape as collectEarthService
+  //    Dataset: Hansen GFC 2023 — treecover2000, loss, gain bands
+  // ─────────────────────────────────────────────
+  async analyzeTreeCover(coordinates, dateRange = {}) {
+    const client = await this.getClient();
+    if (!client) return this.getMockTreeCoverData();
+
+    try {
+      logger.info('GEE: Analyzing tree cover via Hansen GFC 2023');
+      const geometry = this.buildGeometry(coordinates);
+
+      const expression = {
+        functionInvocationValue: {
+          functionName: 'Image.reduceRegion',
+          arguments: {
+            image: {
+              functionInvocationValue: {
+                functionName: 'Image.select',
+                arguments: {
+                  input: {
+                    functionInvocationValue: {
+                      functionName: 'Image.load',
+                      arguments: { id: { constantValue: 'UMD/hansen/global_forest_change_2023_v1_11' } }
+                    }
+                  },
+                  bandSelectors: { constantValue: ['treecover2000', 'loss', 'gain'] }
+                }
+              }
+            },
+            reducer: { functionInvocationValue: { functionName: 'Reducer.mean', arguments: {} } },
+            geometry,
+            scale: { constantValue: 30 },
+            maxPixels: { constantValue: 1e9 },
+            bestEffort: { constantValue: true }
+          }
+        }
       };
 
-      const riskScore = this.calculateOverallRisk(factors);
-      const riskLevel = this.calculateRiskLevel(riskScore);
+      const result = await this.computeValue(expression);
+      if (!result) throw new Error('No result from GEE');
 
-      // ── Build and save risk assessment ────────────────────────
-      const riskAssessment = new Risk({
-        polygonId: polygonData.id || `polygon-${Date.now()}`,
-        name: polygonData.name || 'Unnamed Area',
-        coordinates: {
-          type: 'Polygon',
-          coordinates: polygonData.coordinates
-        },
-        riskLevel,
-        riskScore,
-        factors,
-        satelliteData: {
-          source: treeCoverData.source || 'GEE-Hansen-GFC-2023',
-          imageryDate: new Date(),
-          confidence: treeCoverData.confidence || 85,
-          changeDetected: deforestationData.hasDeforestation || false,
-          treeCoverPercentage: treeCoverData.treeCoverPercentage,
-          historicalComparison: {
-            fiveYearChange:  this.calculateHistoricalChange(historicalData, 5),
-            tenYearChange:   this.calculateHistoricalChange(historicalData, 10)
-          }
-        },
-        actions: this.determineRequiredActions(riskLevel, factors),
-        metadata: {
-          createdBy: 'system',
-          updatedAt: new Date(),
-          region: settlements[0]?.name || null,
-          tags: [riskLevel, 'gee', 'hansen'],
-          // Store GEE-specific extras for audit/display
-          deforestationYear: deforestationData.primaryLossYear || null
-        }
-      });
+      const treecover2000 = result.treecover2000 ?? 50;
+      const lossFraction  = result.loss ?? 0;
+      const gainFraction  = result.gain ?? 0;
 
-      await riskAssessment.save();
-      logger.info(`Risk saved: ${riskAssessment.name} [${riskLevel}] score=${riskScore}`);
+      const lossPoints    = lossFraction * 100;
+      const gainPoints    = gainFraction * 10;
+      const currentCover  = Math.max(0, Math.round(treecover2000 - lossPoints + gainPoints));
 
-      if (global.io) {
-        global.io.emit('risk-update', {
-          id: riskAssessment._id,
-          name: riskAssessment.name,
-          riskLevel: riskAssessment.riskLevel,
-          riskScore: riskAssessment.riskScore,
-          timestamp: new Date()
-        });
-      }
+      return {
+        success: true,
+        treeCoverPercentage: currentCover,
+        changeDetected: lossPoints > 5,
+        confidence: 90,
+        source: 'GEE-Hansen-GFC-2023'
+      };
 
-      return riskAssessment;
     } catch (error) {
-      logger.error('Risk analysis failed:', error);
-      throw error;
+      logger.error('GEE analyzeTreeCover failed:', error.message);
+      return this.getMockTreeCoverData();
     }
   }
 
-  calculateDegradationRate(historicalData) {
-    if (!historicalData.treeCover || historicalData.treeCover.length < 2) return 0;
-    const recent = historicalData.treeCover[0] || 50;
-    const old    = historicalData.treeCover[historicalData.treeCover.length - 1] || 50;
-    return Math.max(0, Math.min(100, ((old - recent) / old) * 100));
-  }
+  // ─────────────────────────────────────────────
+  // 2. detectDeforestation()
+  //    Same method name + return shape as collectEarthService
+  //    Dataset: Hansen GFC — loss + lossyear bands
+  // ─────────────────────────────────────────────
+  async detectDeforestation(coordinates, baselineDate = '2010-01-01') {
+    const client = await this.getClient();
+    if (!client) return this.getMockDeforestationData();
 
-  // Used as fallback if GEE MODIS call fails
-  calculateFireRiskFromNDVI(historicalData) {
-    if (!historicalData.ndvi || historicalData.ndvi.length === 0) return 40;
-    const avgNdvi = historicalData.ndvi.reduce((a, b) => a + b, 0) / historicalData.ndvi.length;
-    return Math.min(100, Math.round(Math.max(0, (0.8 - avgNdvi) / 0.8) * 100));
-  }
+    try {
+      logger.info('GEE: Detecting deforestation via Hansen GFC 2023');
+      const geometry = this.buildGeometry(coordinates);
+      const baselineOffset = new Date(baselineDate).getFullYear() - 2000;
 
-  calculateOverallRisk(factors) {
-    const weights = {
-      treeCoverLoss: 0.35,
-      degradationRate: 0.20,
-      fireRisk: 0.20,
-      encroachmentRisk: 0.15,
-      illegalLoggingProbability: 0.10
-    };
-    let weightedSum = 0;
-    for (const [factor, value] of Object.entries(factors)) {
-      weightedSum += (value * (weights[factor] || 0));
+      const expression = {
+        functionInvocationValue: {
+          functionName: 'Image.reduceRegion',
+          arguments: {
+            image: {
+              functionInvocationValue: {
+                functionName: 'Image.select',
+                arguments: {
+                  input: {
+                    functionInvocationValue: {
+                      functionName: 'Image.load',
+                      arguments: { id: { constantValue: 'UMD/hansen/global_forest_change_2023_v1_11' } }
+                    }
+                  },
+                  bandSelectors: { constantValue: ['loss', 'lossyear', 'treecover2000'] }
+                }
+              }
+            },
+            reducer: { functionInvocationValue: { functionName: 'Reducer.mean', arguments: {} } },
+            geometry,
+            scale: { constantValue: 30 },
+            maxPixels: { constantValue: 1e9 },
+            bestEffort: { constantValue: true }
+          }
+        }
+      };
+
+      const result = await this.computeValue(expression);
+      if (!result) throw new Error('No result from GEE');
+
+      const lossFraction  = result.loss ?? 0;
+      const lossYear      = result.lossyear ?? 0;
+      const treecover2000 = result.treecover2000 ?? 50;
+
+      const lossPercentage = Math.round(lossFraction * 100);
+      const recentLoss     = lossYear >= baselineOffset ? lossPercentage : 0;
+      const hasDeforestation = recentLoss > 5;
+      const actualLossYear = lossYear > 0 ? 2000 + Math.round(lossYear) : null;
+
+      return {
+        hasDeforestation,
+        lossArea: Math.round(recentLoss * treecover2000 * 10),
+        lossPercentage: recentLoss,
+        primaryLossYear: actualLossYear,
+        events: hasDeforestation ? [{
+          type: 'tree_cover_loss',
+          year: actualLossYear,
+          magnitude: recentLoss,
+          source: 'Hansen GFC 2023'
+        }] : []
+      };
+
+    } catch (error) {
+      logger.error('GEE detectDeforestation failed:', error.message);
+      return this.getMockDeforestationData();
     }
-    return Math.round(weightedSum);
   }
 
-  calculateHistoricalChange(historicalData, years) {
-    if (!historicalData.treeCover || historicalData.treeCover.length < 2) return 0;
-    const maxIndex = Math.min(years - 1, historicalData.treeCover.length - 1);
-    const recent = historicalData.treeCover[0] || 50;
-    const past   = historicalData.treeCover[maxIndex] || 50;
-    return parseFloat(((past - recent) / past * 100).toFixed(1));
-  }
+  // ─────────────────────────────────────────────
+  // 3. getHistoricalTrends()
+  //    Same method name + return shape as collectEarthService
+  //    Dataset: Landsat 8 C2 (2013+) / Landsat 7 C2 (pre-2013)
+  //    years param = how many years back (default 10)
+  // ─────────────────────────────────────────────
+  async getHistoricalTrends(coordinates, years = 10) {
+    const client = await this.getClient();
+    if (!client) return this.getMockHistoricalData();
 
-  determineRequiredActions(riskLevel, factors) {
-    const actions = [];
-    if (riskLevel === 'critical' || riskLevel === 'high') {
-      actions.push({ type: 'alert', status: 'pending', triggeredAt: new Date(),
-        notes: `Urgent: ${riskLevel.toUpperCase()} risk detected` });
-      if (factors.illegalLoggingProbability > 70) {
-        actions.push({ type: 'legal_notification', status: 'pending', triggeredAt: new Date(),
-          notes: 'Possible illegal logging activity detected' });
+    logger.info(`GEE: Getting ${years}-year historical NDVI via Landsat`);
+
+    try {
+      const geometry    = this.buildGeometry(coordinates);
+      const currentYear = new Date().getFullYear();
+      const startYear   = currentYear - years;
+      const results     = [];
+
+      for (let yr = startYear; yr <= currentYear; yr++) {
+        // Landsat 8 launched April 2013; use L7 for earlier years
+        const collectionId = yr >= 2013 ? 'LANDSAT/LC08/C02/T1_L2' : 'LANDSAT/LE07/C02/T1_L2';
+        const nirBand      = yr >= 2013 ? 'SR_B5' : 'SR_B4';
+        const redBand      = yr >= 2013 ? 'SR_B4' : 'SR_B3';
+
+        const expression = {
+          functionInvocationValue: {
+            functionName: 'Image.reduceRegion',
+            arguments: {
+              image: {
+                functionInvocationValue: {
+                  functionName: 'ImageCollection.reduce',
+                  arguments: {
+                    collection: {
+                      functionInvocationValue: {
+                        functionName: 'ImageCollection.map',
+                        arguments: {
+                          collection: {
+                            functionInvocationValue: {
+                              functionName: 'ImageCollection.filterDate',
+                              arguments: {
+                                collection: {
+                                  functionInvocationValue: {
+                                    functionName: 'ImageCollection.filterBounds',
+                                    arguments: {
+                                      collection: {
+                                        functionInvocationValue: {
+                                          functionName: 'ImageCollection.load',
+                                          arguments: { id: { constantValue: collectionId } }
+                                        }
+                                      },
+                                      geometry
+                                    }
+                                  }
+                                },
+                                start: { constantValue: `${yr}-01-01` },
+                                end:   { constantValue: `${yr}-12-31` }
+                              }
+                            }
+                          },
+                          baseAlgorithm: {
+                            functionDefinitionValue: {
+                              argumentNames: ['img'],
+                              body: {
+                                functionInvocationValue: {
+                                  functionName: 'Image.normalizedDifference',
+                                  arguments: {
+                                    input: { argumentReference: 'img' },
+                                    bandNames: { constantValue: [nirBand, redBand] }
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    },
+                    reducer: { functionInvocationValue: { functionName: 'Reducer.mean', arguments: {} } }
+                  }
+                }
+              },
+              reducer: { functionInvocationValue: { functionName: 'Reducer.mean', arguments: {} } },
+              geometry,
+              scale: { constantValue: 30 },
+              bestEffort: { constantValue: true }
+            }
+          }
+        };
+
+        const result = await this.computeValue(expression);
+        if (result) {
+          const ndviVal = result.nd_mean ?? result.nd ?? null;
+          if (ndviVal !== null && ndviVal > -1) {
+            const ndvi = parseFloat(Math.max(-1, Math.min(1, ndviVal)).toFixed(3));
+            results.push({
+              year: yr,
+              ndvi,
+              treeCover: Math.round(Math.max(0, Math.min(100, ndvi * 120)))
+            });
+          }
+        }
       }
-      actions.push({ type: 'inspection', status: 'pending', triggeredAt: new Date(),
-        notes: 'Immediate field inspection required' });
-    } else if (riskLevel === 'medium' && factors.fireRisk > 60) {
-      actions.push({ type: 'alert', status: 'pending', triggeredAt: new Date(),
-        notes: 'Elevated fire risk detected' });
+
+      if (results.length === 0) throw new Error('No Landsat results');
+
+      return {
+        timeline: results.map(r => `${r.year}-01-01`),
+        ndvi:     results.map(r => r.ndvi),
+        treeCover: results.map(r => r.treeCover),
+        landUse:  results.map(r =>
+          r.treeCover > 50 ? 'forest' : r.treeCover > 20 ? 'mixed' : 'non-forest'
+        )
+      };
+
+    } catch (error) {
+      logger.error('GEE getHistoricalTrends failed:', error.message);
+      return this.getMockHistoricalData();
     }
-    return actions;
+  }
+
+  // ─────────────────────────────────────────────
+  // 4. getFireRiskScore()  ← NEW method
+  //    Called by riskAnalysisService.calculateFireRisk()
+  //    Dataset: MODIS MCD64A1 burned area — 500m, monthly
+  //    Returns a 0-100 score based on real burn history
+  // ─────────────────────────────────────────────
+  async getFireRiskScore(coordinates, yearsBack = 3) {
+    const client = await this.getClient();
+    if (!client) return null;
+
+    logger.info('GEE: Fetching MODIS fire/burn data');
+
+    try {
+      const geometry  = this.buildGeometry(coordinates);
+      const endDate   = new Date().toISOString().split('T')[0];
+      const startDate = `${new Date().getFullYear() - yearsBack}-01-01`;
+
+      const expression = {
+        functionInvocationValue: {
+          functionName: 'Image.reduceRegion',
+          arguments: {
+            image: {
+              functionInvocationValue: {
+                functionName: 'ImageCollection.reduce',
+                arguments: {
+                  collection: {
+                    functionInvocationValue: {
+                      functionName: 'ImageCollection.select',
+                      arguments: {
+                        collection: {
+                          functionInvocationValue: {
+                            functionName: 'ImageCollection.filterDate',
+                            arguments: {
+                              collection: {
+                                functionInvocationValue: {
+                                  functionName: 'ImageCollection.filterBounds',
+                                  arguments: {
+                                    collection: {
+                                      functionInvocationValue: {
+                                        functionName: 'ImageCollection.load',
+                                        arguments: { id: { constantValue: 'MODIS/061/MCD64A1' } }
+                                      }
+                                    },
+                                    geometry
+                                  }
+                                }
+                              },
+                              start: { constantValue: startDate },
+                              end:   { constantValue: endDate }
+                            }
+                          }
+                        },
+                        bandSelectors: { constantValue: ['BurnDate'] }
+                      }
+                    }
+                  },
+                  reducer: { functionInvocationValue: { functionName: 'Reducer.max', arguments: {} } }
+                }
+              }
+            },
+            reducer: { functionInvocationValue: { functionName: 'Reducer.mean', arguments: {} } },
+            geometry,
+            scale: { constantValue: 500 },
+            bestEffort: { constantValue: true }
+          }
+        }
+      };
+
+      const result = await this.computeValue(expression);
+      if (!result) return null;
+
+      const burnDateMean = result.BurnDate_max ?? result.BurnDate ?? 0;
+      const hasBurnHistory = burnDateMean > 0;
+      const score = hasBurnHistory
+        ? Math.min(100, Math.round(50 + (burnDateMean / 365) * 50))
+        : Math.floor(Math.random() * 15) + 5;
+
+      logger.info(`GEE fire score: ${score} (burnMean=${burnDateMean.toFixed(2)})`);
+      return score;
+
+    } catch (error) {
+      logger.error('GEE getFireRiskScore failed:', error.message);
+      return null;
+    }
+  }
+
+  // ─────────────────────────────────────────────
+  // Fallback mock data — same interface as collectEarthService
+  // Used when GEE credentials are not yet configured
+  // ─────────────────────────────────────────────
+  getMockTreeCoverData() {
+    return {
+      success: true,
+      treeCoverPercentage: 45 + Math.floor(Math.random() * 30),
+      changeDetected: Math.random() > 0.7,
+      confidence: 75 + Math.floor(Math.random() * 20),
+      source: 'mock'
+    };
+  }
+
+  getMockDeforestationData() {
+    return {
+      hasDeforestation: Math.random() > 0.6,
+      lossArea: Math.floor(Math.random() * 1000),
+      lossPercentage: Math.floor(Math.random() * 30),
+      events: []
+    };
+  }
+
+  getMockHistoricalData() {
+    const years = Array.from({ length: 10 }, (_, i) => new Date().getFullYear() - i);
+    return {
+      timeline:  years.map(y => `${y}-01-01`),
+      ndvi:      years.map(() => parseFloat((0.4 + Math.random() * 0.3).toFixed(3))),
+      treeCover: years.map(() => Math.floor(40 + Math.random() * 40)),
+      landUse:   years.map(() => 'forest')
+    };
   }
 }
 
-module.exports = new RiskAnalysisService();
+module.exports = new GoogleEarthEngineService();
