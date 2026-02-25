@@ -1,6 +1,6 @@
 // services/riskAnalysisService.js
 const Risk = require('../models/Risk');
-const collectEarthService = require('./collectEarthService');
+const collectEarthService = require('./googleEarthEngineService');
 const logger = require('../utils/logger');
 
 class RiskAnalysisService {
