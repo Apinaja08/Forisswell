@@ -1,5 +1,6 @@
 const jwt = require("jsonwebtoken");
 const User = require("../models/User");
+const VolunteerProfile = require("../models/VolunteerProfile");
 
 const createError = (statusCode, message) => {
   const err = new Error(message);
@@ -100,4 +101,29 @@ exports.isAdmin = (req, res, next) => {
     success: false,
     error: 'Access denied. Admins only.'
   });
+};
+
+// Require volunteer profile to be completed
+exports.requireVolunteerProfile = async (req, res, next) => {
+  try {
+    if (!req.user) {
+      return next(createError(401, "Authentication required"));
+    }
+
+    const profile = await VolunteerProfile.findOne({ user: req.user.id });
+
+    if (!profile) {
+      return next(
+        createError(
+          403,
+          "Please complete your volunteer profile before accessing this resource"
+        )
+      );
+    }
+
+    req.volunteerProfile = profile;
+    next();
+  } catch (error) {
+    next(createError(500, "Error checking volunteer profile"));
+  }
 };

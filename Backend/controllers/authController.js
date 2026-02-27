@@ -35,7 +35,7 @@ const sendTokenResponse = (user, statusCode, res, message) => {
 
 // @route   POST /api/auth/register (PUBLIC)
 exports.register = asyncHandler(async (req, res) => {
-  const { fullName, email, password } = req.body;
+  const { fullName, email, password, role } = req.body;
 
   if (!fullName || !email || !password) {
     throw createError(400, "Please provide all required fields");
@@ -46,7 +46,7 @@ exports.register = asyncHandler(async (req, res) => {
     throw createError(400, "User with this email already exists");
   }
 
-  const user = await User.create({ fullName, email, password });
+  const user = await User.create({ fullName, email, password, role });
   sendTokenResponse(user, 201, res, "Registered successfully");
 });
 
