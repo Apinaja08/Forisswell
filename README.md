@@ -142,6 +142,18 @@ Backend/
    
    # Database
    MONGO_URI=mongodb://localhost:27017/FORISSWELL
+
+   # Sentinel Hub
+   SENTINEL_HUB_CLIENT_ID=
+   SENTINEL_HUB_CLIENT_SECRET=
+
+   # Google Earth Engine
+   GEE_PROJECT_ID=forriswell
+   GEE_KEY_FILE=./forriswell.json
+
+   GOOGLE_CLIENT_ID=
+   GOOGLE_CLIENT_SECRET=
+   GOOGLE_REDIRECT_URI=http://localhost:3000/auth/google/callback
    
    # JWT Authentication
    JWT_SECRET=your_super_secure_secret_key_change_this_in_production
