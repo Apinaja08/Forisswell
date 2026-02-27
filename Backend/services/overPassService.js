@@ -1,139 +1,227 @@
-// server/services/overpassService.js
-const axios = require('axios');
-const logger = require('../utils/logger');
+const axios = require("axios");
+const pLimit = require("p-limit");
+const crypto = require("crypto");
+const logger = require("../utils/logger");
 
 class OverpassService {
   constructor() {
-    // Free public endpoint — no API key required
-    this.baseURL = 'https://overpass-api.de/api/interpreter';
+    // multiple endpoints for failover
+    this.endpoints = [
+      "https://overpass.kumi.systems/api/interpreter",
+      "https://lz4.overpass-api.de/api/interpreter",
+      "https://overpass-api.de/api/interpreter"
+    ];
+
+    this.endpointIndex = 0;
+
     this.client = axios.create({
-      timeout: 20000,
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+      timeout: 60000,
+      headers: { "Content-Type": "application/x-www-form-urlencoded" }
     });
+
+    // concurrency limiter
+    this.limit = pLimit(3);
+
+    // memory cache
+    this.cache = new Map();
   }
 
-  // ─────────────────────────────────────────────
-  // Convert polygon coordinates to bounding box
-  // Returns: [minLat, minLng, maxLat, maxLng] (Overpass order)
-  // ─────────────────────────────────────────────
-  polygonToBbox(coordinates) {
-    const ring = Array.isArray(coordinates[0][0]) ? coordinates[0] : coordinates;
+  // rotate endpoint if failed
+  nextEndpoint() {
+    this.endpointIndex =
+      (this.endpointIndex + 1) % this.endpoints.length;
+    return this.endpoints[this.endpointIndex];
+  }
+
+  currentEndpoint() {
+    return this.endpoints[this.endpointIndex];
+  }
+
+  // hash key for caching
+  hash(input) {
+    return crypto
+      .createHash("md5")
+      .update(JSON.stringify(input))
+      .digest("hex");
+  }
+
+  polygonToBbox(coords) {
+    const ring = Array.isArray(coords[0][0]) ? coords[0] : coords;
     const lats = ring.map(p => p[1]);
     const lngs = ring.map(p => p[0]);
-    return [Math.min(...lats), Math.min(...lngs), Math.max(...lats), Math.max(...lngs)];
+    return [
+      Math.min(...lats),
+      Math.min(...lngs),
+      Math.max(...lats),
+      Math.max(...lngs)
+    ];
   }
 
-  // ─────────────────────────────────────────────
-  // Query Overpass API with QL string
-  // ─────────────────────────────────────────────
-  async query(ql) {
-    try {
-      const response = await this.client.post(
-        this.baseURL,
-        `data=${encodeURIComponent(ql)}`
-      );
-      return response.data;
-    } catch (error) {
-      logger.error('Overpass query failed:', error.message);
-      return null;
+  // adaptive tiling
+  splitBbox(bbox, tileSizeDeg) {
+    const [minLat, minLng, maxLat, maxLng] = bbox;
+    const tiles = [];
+
+    for (let lat = minLat; lat < maxLat; lat += tileSizeDeg) {
+      for (let lng = minLng; lng < maxLng; lng += tileSizeDeg) {
+        tiles.push([
+          lat,
+          lng,
+          Math.min(lat + tileSizeDeg, maxLat),
+          Math.min(lng + tileSizeDeg, maxLng)
+        ]);
+      }
     }
+    return tiles;
   }
 
-  // ─────────────────────────────────────────────
-  // calculateEncroachmentRisk()
-  // Replaces Math.random() — returns 0-100 score
-  // Checks for: urban areas, roads, agriculture,
-  // residential zones, industrial areas near the polygon
-  // ─────────────────────────────────────────────
+  // main query function with retry + rotation
+  async query(ql) {
+    const cacheKey = this.hash(ql);
+
+    if (this.cache.has(cacheKey)) {
+      return this.cache.get(cacheKey);
+    }
+
+    let attempts = 0;
+
+    while (attempts < this.endpoints.length) {
+      try {
+        const url = this.currentEndpoint();
+
+        const res = await this.client.post(
+          url,
+          `data=${encodeURIComponent(ql)}`
+        );
+
+        this.cache.set(cacheKey, res.data);
+        return res.data;
+      } catch (err) {
+        logger.warn(
+          `Overpass failed (${err.response?.status}) switching endpoint`
+        );
+        this.nextEndpoint();
+        attempts++;
+        await new Promise(r => setTimeout(r, 1500));
+      }
+    }
+
+    logger.error("All Overpass endpoints failed.");
+    return null;
+  }
+
+  // lightweight tile query
+  async queryTile(tile) {
+    const [minLat, minLng, maxLat, maxLng] = tile;
+    const bbox = `${minLat},${minLng},${maxLat},${maxLng}`;
+
+    const ql = `
+      [out:json][timeout:60];
+      (
+        way["building"](${bbox});
+        way["highway"](${bbox});
+      );
+      out count;
+    `;
+
+    const result = await this.query(ql);
+    return result?.elements?.[0]?.tags?.total ?? 0;
+  }
+
+  // MAIN RISK CALCULATION
   async calculateEncroachmentRisk(polygonData) {
     try {
-      const coords = polygonData.coordinates;
-      const [minLat, minLng, maxLat, maxLng] = this.polygonToBbox(coords);
+      const bbox = this.polygonToBbox(polygonData.coordinates);
 
-      // Expand bbox by ~5km for proximity search
-      const buffer = 0.05; // ~5km in degrees
-      const expandedBbox = `${minLat - buffer},${minLng - buffer},${maxLat + buffer},${maxLng + buffer}`;
+      // estimate size → adaptive tile size
+      const latDiff = bbox[2] - bbox[0];
+      const lngDiff = bbox[3] - bbox[1];
+      const areaSize = latDiff * lngDiff;
 
-      // Overpass QL: count urban features near the polygon
-      // Higher count = higher encroachment risk
-      const ql = `
-        [out:json][timeout:15];
-        (
-          // Urban/residential areas
-          way["landuse"~"residential|commercial|industrial|urban"](${expandedBbox});
-          // Roads (highways indicate human access)
-          way["highway"~"primary|secondary|tertiary|residential"](${expandedBbox});
-          // Agriculture (encroaching on forest)
-          way["landuse"~"farmland|farmyard|orchard|vineyard|agriculture"](${expandedBbox});
-          // Buildings
-          way["building"](${expandedBbox});
-          // Settlements
-          node["place"~"city|town|village|hamlet"](${expandedBbox});
-        );
-        out count;
-      `;
+      let tileSize = 0.1;
+      if (areaSize > 1) tileSize = 0.25;
+      if (areaSize > 5) tileSize = 0.5;
 
-      const result = await this.query(ql);
-      if (!result) return this.getMockEncroachmentRisk();
+      const tiles = this.splitBbox(bbox, tileSize);
 
-      const totalCount = result?.elements?.[0]?.tags?.total ?? 0;
+      logger.info(
+        `Overpass tiles: ${tiles.length} (tileSize=${tileSize})`
+      );
 
-      // Score: 0-100 based on feature density
-      // Tuned thresholds: 0 features = low risk, 50+ = high risk
-      let score = Math.min(100, Math.round((totalCount / 50) * 60));
+      let total = 0;
 
-      // Bonus: check if roads go directly through the bounding box
-      const directRoadQl = `
-        [out:json][timeout:10];
+      await Promise.all(
+        tiles.map((tile, i) =>
+          this.limit(async () => {
+            const count = await this.queryTile(tile);
+            total += count;
+            logger.info(`Tile ${i + 1}/${tiles.length} → ${count}`);
+          })
+        )
+      );
+
+      // base score
+      let score = Math.min(60, Math.round((total / 50) * 60));
+
+      // direct road check
+      const [minLat, minLng, maxLat, maxLng] = bbox;
+      const roadQl = `
+        [out:json][timeout:25];
         way["highway"](${minLat},${minLng},${maxLat},${maxLng});
         out count;
       `;
-      const roadResult = await this.query(directRoadQl);
-      const directRoads = roadResult?.elements?.[0]?.tags?.total ?? 0;
-      if (directRoads > 0) score = Math.min(100, score + 20); // Roads through area = +20
 
-      logger.info(`Encroachment risk calculated: ${score} (${totalCount} nearby features, ${directRoads} direct roads)`);
+      const roadResult = await this.query(roadQl);
+      const roads =
+        roadResult?.elements?.[0]?.tags?.total ?? 0;
+
+      if (roads > 0) score = Math.min(100, score + 20);
+
+      logger.info(
+        `Encroachment risk: ${score} (${total} features, ${roads} roads)`
+      );
+
       return score;
-
-    } catch (error) {
-      logger.error('OverpassService encroachment risk failed:', error.message);
+    } catch (err) {
+      logger.error(
+        "Encroachment calculation failed:",
+        err.message
+      );
       return this.getMockEncroachmentRisk();
     }
   }
 
-  // ─────────────────────────────────────────────
-  // Optional: Get nearby settlement names for metadata
-  // Useful for riskAssessment.metadata.region
-  // ─────────────────────────────────────────────
-  async getNearbySettlements(coordinates, radiusKm = 20) {
+  // nearest towns
+  async getNearbySettlements(coords, radiusKm = 20) {
     try {
-      const ring = Array.isArray(coordinates[0][0]) ? coordinates[0] : coordinates;
-      // Get center point of polygon
-      const centerLat = ring.reduce((s, p) => s + p[1], 0) / ring.length;
-      const centerLng = ring.reduce((s, p) => s + p[0], 0) / ring.length;
-      const radiusM = radiusKm * 1000;
+      const ring = Array.isArray(coords[0][0]) ? coords[0] : coords;
+      const lat = ring.reduce((s, p) => s + p[1], 0) / ring.length;
+      const lng = ring.reduce((s, p) => s + p[0], 0) / ring.length;
+
+      const radius = radiusKm * 1000;
 
       const ql = `
-        [out:json][timeout:10];
-        node["place"~"city|town|village"](around:${radiusM},${centerLat},${centerLng});
+        [out:json][timeout:25];
+        node["place"~"city|town|village"](around:${radius},${lat},${lng});
         out body 5;
       `;
 
-      const result = await this.query(ql);
-      return (result?.elements ?? []).map(el => ({
-        name: el.tags?.name ?? 'Unknown',
-        type: el.tags?.place ?? 'settlement',
+      const res = await this.query(ql);
+
+      return (res?.elements ?? []).map(el => ({
+        name: el.tags?.name ?? "Unknown",
+        type: el.tags?.place ?? "settlement",
         lat: el.lat,
         lng: el.lon
       }));
-    } catch (error) {
-      logger.error('OverpassService getNearbySettlements failed:', error.message);
+    } catch (err) {
+      logger.error("Settlement query failed:", err.message);
       return [];
     }
   }
 
   getMockEncroachmentRisk() {
-    return Math.floor(Math.random() * 40) + 10; // 10-50
+    return Math.floor(Math.random() * 40) + 10;
   }
 }
 

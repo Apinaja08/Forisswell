@@ -1,11 +1,29 @@
-// server/controllers/riskController.js
 const Risk = require('../models/Risk');
 const riskAnalysisService = require('../services/riskAnalysisService');
 const logger = require('../utils/logger');
 
+// Helper function to ensure coordinates are in the correct format
+const ensureCorrectCoordinateFormat = (coordinates) => {
+  // If it's already a GeoJSON polygon coordinates array
+  if (Array.isArray(coordinates) && 
+      Array.isArray(coordinates[0]) && 
+      Array.isArray(coordinates[0][0])) {
+    return coordinates;
+  }
+  
+  // If it's a simple ring, wrap it in a GeoJSON polygon coordinates array
+  if (Array.isArray(coordinates) && 
+      Array.isArray(coordinates[0]) && 
+      coordinates[0].length === 2) {
+    return [coordinates];
+  }
+  
+  return coordinates;
+};
+
 exports.analyzeRisk = async (req, res) => {
   try {
-    const { polygon } = req.body;
+    let { polygon } = req.body;
     
     if (!polygon || !polygon.coordinates) {
       return res.status(400).json({
@@ -14,7 +32,26 @@ exports.analyzeRisk = async (req, res) => {
       });
     }
 
-    const analysis = await riskAnalysisService.analyzeArea(polygon);
+    // Ensure polygon has the correct GeoJSON format
+    // If it doesn't have a type, add it
+    if (!polygon.type) {
+      polygon = {
+        type: 'Polygon',
+        name: polygon.name || 'Unnamed Area',
+        coordinates: polygon.coordinates
+      };
+    }
+
+    // Ensure coordinates are in the correct format for Sentinel Hub
+    // Sentinel Hub expects [longitude, latitude] order
+    const formattedPolygon = {
+      ...polygon,
+      coordinates: ensureCorrectCoordinateFormat(polygon.coordinates)
+    };
+
+    logger.info(`Processing polygon with ${formattedPolygon.coordinates[0].length} points`);
+
+    const analysis = await riskAnalysisService.analyzeArea(formattedPolygon);
     
     res.status(201).json({
       success: true,
@@ -24,7 +61,7 @@ exports.analyzeRisk = async (req, res) => {
     logger.error('Risk analysis endpoint error:', error);
     res.status(500).json({
       success: false,
-      error: 'Failed to analyze risk'
+      error: 'Failed to analyze risk: ' + error.message
     });
   }
 };

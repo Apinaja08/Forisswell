@@ -1,7 +1,6 @@
-// server/services/riskAnalysisService.js
 const Risk = require('../models/Risk');
-const geeService = require('./googleEarthEngineService');
-const overpassService = require('./overPassService');
+const sentinelHubService = require('./sentinelHubService');
+const overpassService = require('./overpassService');
 const logger = require('../utils/logger');
 
 class RiskAnalysisService {
@@ -16,33 +15,64 @@ class RiskAnalysisService {
     try {
       logger.info(`Analyzing area: ${polygonData.name || 'unnamed'}`);
 
-      // ── All data fetched in parallel ─────────────────────────
+      // Extract coordinates - handle both formats
+      let coordinates = polygonData.coordinates;
+      
+      // If coordinates is a GeoJSON polygon coordinates array, extract the first ring for services
+      let coordinatesForServices = coordinates;
+      if (Array.isArray(coordinates[0]) && Array.isArray(coordinates[0][0])) {
+        // It's already in the right format for Sentinel Hub
+        coordinatesForServices = coordinates;
+      } else if (Array.isArray(coordinates[0]) && coordinates[0].length === 2) {
+        // It's a simple ring, wrap it for Sentinel Hub
+        coordinatesForServices = [coordinates];
+      }
+
+      // Create a standardized polygon object for Overpass service
+      const standardizedPolygon = {
+        ...polygonData,
+        coordinates: coordinatesForServices
+      };
+
+      logger.info(`Using coordinates format: ${Array.isArray(coordinatesForServices[0][0]) ? 'GeoJSON' : 'Simple'}`);
+
+      // ── All data fetched in parallel ──────────────────────────
       const [
-        treeCoverData,      // GEE Hansen: current tree cover %
-        deforestationData,  // GEE Hansen: loss %, events, year
-        historicalData,     // GEE Landsat: 10-year NDVI timeline
-        geeFireScore,       // GEE MODIS: burn scar risk score 0-100
-        encroachmentRisk,   // Overpass: proximity to roads/settlements
-        settlements         // Overpass: nearby place names for metadata
-      ] = await Promise.all([
-        geeService.analyzeTreeCover(polygonData.coordinates),
-        geeService.detectDeforestation(polygonData.coordinates),
-        geeService.getHistoricalTrends(polygonData.coordinates),
-        geeService.getFireRiskScore(polygonData.coordinates),
-        overpassService.calculateEncroachmentRisk(polygonData),
-        overpassService.getNearbySettlements(polygonData.coordinates)
+        treeCoverData,
+        deforestationData,
+        historicalData,
+        encroachmentRisk,
+        settlements
+      ] = await Promise.allSettled([
+        sentinelHubService.analyzeTreeCover(coordinatesForServices),
+        sentinelHubService.detectDeforestation(coordinatesForServices),
+        sentinelHubService.getHistoricalTrends(coordinatesForServices),
+        overpassService.calculateEncroachmentRisk(standardizedPolygon),
+        overpassService.getNearbySettlements(coordinatesForServices)
       ]);
+
+      // Process results with fallbacks
+      const processedTreeCover = this.processResult(treeCoverData, sentinelHubService.getMockTreeCoverData());
+      const processedDeforestation = this.processResult(deforestationData, sentinelHubService.getMockDeforestationData());
+      const processedHistorical = this.processResult(historicalData, sentinelHubService.getMockHistoricalData());
+      const processedEncroachment = encroachmentRisk.status === 'fulfilled' ? encroachmentRisk.value : 20;
+      const processedSettlements = settlements.status === 'fulfilled' ? settlements.value : [];
+
+      // Log if we're using mock data
+      if (processedTreeCover.source === 'mock') {
+        logger.warn('Using mock tree cover data');
+      }
+      if (processedDeforestation.source === 'mock') {
+        logger.warn('Using mock deforestation data');
+      }
 
       // ── Risk factor calculation ───────────────────────────────
       const factors = {
-        treeCoverLoss: Math.max(0, 100 - (treeCoverData.treeCoverPercentage || 0)),
-        degradationRate: this.calculateDegradationRate(historicalData),
-        // geeFireScore is real MODIS data; fall back to NDVI calc if GEE failed
-        fireRisk: geeFireScore ?? this.calculateFireRiskFromNDVI(historicalData),
-        encroachmentRisk,
-        illegalLoggingProbability: deforestationData.hasDeforestation
-          ? Math.min(95, 50 + (deforestationData.lossPercentage || 0))
-          : 15
+        treeCoverLoss: Math.max(0, 100 - (processedTreeCover.treeCoverPercentage || 50)),
+        degradationRate: this.calculateDegradationRate(processedHistorical),
+        fireRisk: this.calculateFireRisk(processedHistorical),
+        encroachmentRisk: processedEncroachment || 20,
+        illegalLoggingProbability: processedDeforestation.hasDeforestation ? 75 : 15
       };
 
       const riskScore = this.calculateOverallRisk(factors);
@@ -54,30 +84,28 @@ class RiskAnalysisService {
         name: polygonData.name || 'Unnamed Area',
         coordinates: {
           type: 'Polygon',
-          coordinates: polygonData.coordinates
+          coordinates: polygonData.coordinates // Store original format
         },
         riskLevel,
         riskScore,
         factors,
         satelliteData: {
-          source: treeCoverData.source || 'GEE-Hansen-GFC-2023',
+          source: processedTreeCover.source || 'Sentinel-2 L2A',
           imageryDate: new Date(),
-          confidence: treeCoverData.confidence || 85,
-          changeDetected: deforestationData.hasDeforestation || false,
-          treeCoverPercentage: treeCoverData.treeCoverPercentage,
+          confidence: processedTreeCover.confidence || 75,
+          changeDetected: processedDeforestation.hasDeforestation || false,
+          treeCoverPercentage: processedTreeCover.treeCoverPercentage || 50,
           historicalComparison: {
-            fiveYearChange:  this.calculateHistoricalChange(historicalData, 5),
-            tenYearChange:   this.calculateHistoricalChange(historicalData, 10)
+            fiveYearChange: this.calculateHistoricalChange(processedHistorical, 5),
+            tenYearChange: this.calculateHistoricalChange(processedHistorical, 10)
           }
         },
         actions: this.determineRequiredActions(riskLevel, factors),
         metadata: {
           createdBy: 'system',
           updatedAt: new Date(),
-          region: settlements[0]?.name || null,
-          tags: [riskLevel, 'gee', 'hansen'],
-          // Store GEE-specific extras for audit/display
-          deforestationYear: deforestationData.primaryLossYear || null
+          region: processedSettlements[0]?.name || 'Unknown Region',
+          tags: [riskLevel, processedTreeCover.source === 'mock' ? 'mock-data' : 'sentinel-hub']
         }
       });
 
@@ -101,18 +129,32 @@ class RiskAnalysisService {
     }
   }
 
+  processResult(result, mockData) {
+    if (result.status === 'fulfilled' && result.value) {
+      return result.value;
+    }
+    return mockData;
+  }
+
   calculateDegradationRate(historicalData) {
-    if (!historicalData.treeCover || historicalData.treeCover.length < 2) return 0;
+    if (!historicalData || !historicalData.treeCover || historicalData.treeCover.length < 2) return 0;
     const recent = historicalData.treeCover[0] || 50;
-    const old    = historicalData.treeCover[historicalData.treeCover.length - 1] || 50;
+    const old = historicalData.treeCover[historicalData.treeCover.length - 1] || 50;
     return Math.max(0, Math.min(100, ((old - recent) / old) * 100));
   }
 
-  // Used as fallback if GEE MODIS call fails
-  calculateFireRiskFromNDVI(historicalData) {
-    if (!historicalData.ndvi || historicalData.ndvi.length === 0) return 40;
+  calculateFireRisk(historicalData) {
+    if (!historicalData || !historicalData.ndvi || historicalData.ndvi.length === 0) return 40;
     const avgNdvi = historicalData.ndvi.reduce((a, b) => a + b, 0) / historicalData.ndvi.length;
     return Math.min(100, Math.round(Math.max(0, (0.8 - avgNdvi) / 0.8) * 100));
+  }
+
+  calculateHistoricalChange(historicalData, years) {
+    if (!historicalData || !historicalData.treeCover || historicalData.treeCover.length < 2) return 0;
+    const maxIndex = Math.min(years - 1, historicalData.treeCover.length - 1);
+    const recent = historicalData.treeCover[0] || 50;
+    const past = historicalData.treeCover[maxIndex] || 50;
+    return parseFloat(((past - recent) / past * 100).toFixed(1));
   }
 
   calculateOverallRisk(factors) {
@@ -130,28 +172,36 @@ class RiskAnalysisService {
     return Math.round(weightedSum);
   }
 
-  calculateHistoricalChange(historicalData, years) {
-    if (!historicalData.treeCover || historicalData.treeCover.length < 2) return 0;
-    const maxIndex = Math.min(years - 1, historicalData.treeCover.length - 1);
-    const recent = historicalData.treeCover[0] || 50;
-    const past   = historicalData.treeCover[maxIndex] || 50;
-    return parseFloat(((past - recent) / past * 100).toFixed(1));
-  }
-
   determineRequiredActions(riskLevel, factors) {
     const actions = [];
     if (riskLevel === 'critical' || riskLevel === 'high') {
-      actions.push({ type: 'alert', status: 'pending', triggeredAt: new Date(),
-        notes: `Urgent: ${riskLevel.toUpperCase()} risk detected` });
+      actions.push({ 
+        type: 'alert', 
+        status: 'pending', 
+        triggeredAt: new Date(),
+        notes: `Urgent: ${riskLevel.toUpperCase()} risk detected` 
+      });
       if (factors.illegalLoggingProbability > 70) {
-        actions.push({ type: 'legal_notification', status: 'pending', triggeredAt: new Date(),
-          notes: 'Possible illegal logging activity detected' });
+        actions.push({ 
+          type: 'legal_notification', 
+          status: 'pending', 
+          triggeredAt: new Date(),
+          notes: 'Possible illegal logging activity detected' 
+        });
       }
-      actions.push({ type: 'inspection', status: 'pending', triggeredAt: new Date(),
-        notes: 'Immediate field inspection required' });
+      actions.push({ 
+        type: 'inspection', 
+        status: 'pending', 
+        triggeredAt: new Date(),
+        notes: 'Immediate field inspection required' 
+      });
     } else if (riskLevel === 'medium' && factors.fireRisk > 60) {
-      actions.push({ type: 'alert', status: 'pending', triggeredAt: new Date(),
-        notes: 'Elevated fire risk detected' });
+      actions.push({ 
+        type: 'alert', 
+        status: 'pending', 
+        triggeredAt: new Date(),
+        notes: 'Elevated fire risk detected' 
+      });
     }
     return actions;
   }
