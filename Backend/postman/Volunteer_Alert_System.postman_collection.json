@@ -1,0 +1,569 @@
+{
+  "info": {
+    "name": "Forisswell Volunteer Alert System",
+    "_postman_id": "volunteer-alert-system-v1",
+    "description": "Complete API collection for testing the automated volunteer alert system. Includes volunteer registration, profile management, alert handling, and admin monitoring endpoints.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:5000",
+      "type": "string"
+    },
+    {
+      "key": "volunteer_token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "admin_token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "user_token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "volunteer_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "alert_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "tree_id",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "1. Setup & Authentication",
+      "item": [
+        {
+          "name": "Register Volunteer Account",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    const response = pm.response.json();",
+                  "    pm.environment.set('volunteer_token', response.token);",
+                  "    pm.collectionVariables.set('volunteer_token', response.token);",
+                  "    console.log('Volunteer token saved:', response.token.substring(0, 20) + '...');",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fullName\": \"Test Volunteer\",\n  \"email\": \"volunteer@forisswell.com\",\n  \"password\": \"password123\",\n  \"role\": \"volunteer\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/auth/register",
+              "host": ["{{base_url}}"],
+              "path": ["api", "auth", "register"]
+            }
+          }
+        },
+        {
+          "name": "Login Volunteer",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    pm.collectionVariables.set('volunteer_token', response.token);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"volunteer@forisswell.com\",\n  \"password\": \"password123\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/auth/login",
+              "host": ["{{base_url}}"],
+              "path": ["api", "auth", "login"]
+            }
+          }
+        },
+        {
+          "name": "Register Tree Owner (User)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    const response = pm.response.json();",
+                  "    pm.collectionVariables.set('user_token', response.token);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fullName\": \"Tree Owner\",\n  \"email\": \"owner@forisswell.com\",\n  \"password\": \"password123\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/auth/register",
+              "host": ["{{base_url}}"],
+              "path": ["api", "auth", "register"]
+            }
+          }
+        },
+        {
+          "name": "Register Admin",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    const response = pm.response.json();",
+                  "    pm.collectionVariables.set('admin_token', response.token);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fullName\": \"Admin User\",\n  \"email\": \"admin@forisswell.com\",\n  \"password\": \"password123\",\n  \"role\": \"admin\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/auth/register",
+              "host": ["{{base_url}}"],
+              "path": ["api", "auth", "register"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Volunteer Profile",
+      "item": [
+        {
+          "name": "Create Volunteer Profile",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Profile created', () => {",
+                  "    pm.response.to.have.status(201);",
+                  "    const response = pm.response.json();",
+                  "    pm.expect(response.success).to.be.true;",
+                  "    pm.collectionVariables.set('volunteer_id', response.data.profile._id);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Content-Type", "value": "application/json"},
+              {"key": "Authorization", "value": "Bearer {{volunteer_token}}"}
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"+94771234567\",\n  \"skills\": [\"watering\", \"pruning\", \"first_aid\"],\n  \"location\": {\n    \"coordinates\": [79.8612, 6.9271]\n  },\n  \"preferredRadius\": 5,\n  \"emergencyContact\": {\n    \"name\": \"Emergency Contact\",\n    \"phone\": \"+94777654321\",\n    \"relationship\": \"Friend\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/volunteers/profile",
+              "host": ["{{base_url}}"],
+              "path": ["api", "volunteers", "profile"]
+            }
+          }
+        },
+        {
+          "name": "Get My Profile",
+          "request": {
+            "method": "GET",
+            "header": [
+              {"key": "Authorization", "value": "Bearer {{volunteer_token}}"}
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/volunteers/profile",
+              "host": ["{{base_url}}"],
+              "path": ["api", "volunteers", "profile"]
+            }
+          }
+        },
+        {
+          "name": "Update Profile",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {"key": "Content-Type", "value": "application/json"},
+              {"key": "Authorization", "value": "Bearer {{volunteer_token}}"}
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"skills\": [\"watering\", \"pruning\", \"mulching\", \"pest_control\"],\n  \"preferredRadius\": 10\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/volunteers/profile",
+              "host": ["{{base_url}}"],
+              "path": ["api", "volunteers", "profile"]
+            }
+          }
+        },
+        {
+          "name": "Update Status",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {"key": "Content-Type", "value": "application/json"},
+              {"key": "Authorization", "value": "Bearer {{volunteer_token}}"}
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"available\",\n  \"isAvailable\": true\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/volunteers/status",
+              "host": ["{{base_url}}"],
+              "path": ["api", "volunteers", "status"]
+            }
+          }
+        },
+        {
+          "name": "Update Location",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {"key": "Content-Type", "value": "application/json"},
+              {"key": "Authorization", "value": "Bearer {{volunteer_token}}"}
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"coordinates\": [79.8615, 6.9275]\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/volunteers/location",
+              "host": ["{{base_url}}"],
+              "path": ["api", "volunteers", "location"]
+            }
+          }
+        },
+        {
+          "name": "Get My Stats",
+          "request": {
+            "method": "GET",
+            "header": [
+              {"key": "Authorization", "value": "Bearer {{volunteer_token}}"}
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/volunteers/stats",
+              "host": ["{{base_url}}"],
+              "path": ["api", "volunteers", "stats"]
+            }
+          }
+        },
+        {
+          "name": "Get VAPID Public Key",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/volunteers/vapid-public-key",
+              "host": ["{{base_url}}"],
+              "path": ["api", "volunteers", "vapid-public-key"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. Tree Management (Setup)",
+      "item": [
+        {
+          "name": "Create Tree",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    const response = pm.response.json();",
+                  "    pm.collectionVariables.set('tree_id', response.data.tree._id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Content-Type", "value": "application/json"},
+              {"key": "Authorization", "value": "Bearer {{user_token}}"}
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Test Mango Tree\",\n  \"species\": \"Mango\",\n  \"plantedDate\": \"2024-01-15\",\n  \"status\": \"GROWING\",\n  \"notes\": \"Test tree for alert system\",\n  \"location\": {\n    \"type\": \"Point\",\n    \"coordinates\": [79.8615, 6.9275]\n  }\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/trees",
+              "host": ["{{base_url}}"],
+              "path": ["api", "trees"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "4. Alert Actions (Volunteer)",
+      "item": [
+        {
+          "name": "Get Nearby Alerts",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Get nearby alerts', () => {",
+                  "    pm.response.to.have.status(200);",
+                  "    const response = pm.response.json();",
+                  "    if (response.data.alerts.length > 0) {",
+                  "        pm.collectionVariables.set('alert_id', response.data.alerts[0]._id);",
+                  "    }",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {"key": "Authorization", "value": "Bearer {{volunteer_token}}"}
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/alerts/nearby",
+              "host": ["{{base_url}}"],
+              "path": ["api", "alerts", "nearby"]
+            }
+          }
+        },
+        {
+          "name": "Accept Alert",
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Authorization", "value": "Bearer {{volunteer_token}}"}
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/alerts/{{alert_id}}/accept",
+              "host": ["{{base_url}}"],
+              "path": ["api", "alerts", "{{alert_id}}", "accept"]
+            }
+          }
+        },
+        {
+          "name": "Get My Active Alert",
+          "request": {
+            "method": "GET",
+            "header": [
+              {"key": "Authorization", "value": "Bearer {{volunteer_token}}"}
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/alerts/my-active",
+              "host": ["{{base_url}}"],
+              "path": ["api", "alerts", "my-active"]
+            }
+          }
+        },
+        {
+          "name": "Start Work",
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Authorization", "value": "Bearer {{volunteer_token}}"}
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/alerts/{{alert_id}}/start",
+              "host": ["{{base_url}}"],
+              "path": ["api", "alerts", "{{alert_id}}", "start"]
+            }
+          }
+        },
+        {
+          "name": "Complete Alert",
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Content-Type", "value": "application/json"},
+              {"key": "Authorization", "value": "Bearer {{volunteer_token}}"}
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"notes\": \"Successfully watered the tree thoroughly and provided shade cover. The tree showed immediate positive response. Temperature was extremely high, so I also added mulch around the base to retain moisture.\",\n  \"photoUrls\": []\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/alerts/{{alert_id}}/complete",
+              "host": ["{{base_url}}"],
+              "path": ["api", "alerts", "{{alert_id}}", "complete"]
+            }
+          }
+        },
+        {
+          "name": "Cancel My Alert",
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Content-Type", "value": "application/json"},
+              {"key": "Authorization", "value": "Bearer {{volunteer_token}}"}
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"Emergency came up, unable to complete the task\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/alerts/{{alert_id}}/cancel",
+              "host": ["{{base_url}}"],
+              "path": ["api", "alerts", "{{alert_id}}", "cancel"]
+            }
+          }
+        },
+        {
+          "name": "Get My Alerts",
+          "request": {
+            "method": "GET",
+            "header": [
+              {"key": "Authorization", "value": "Bearer {{volunteer_token}}"}
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/alerts/my-alerts?status=completed",
+              "host": ["{{base_url}}"],
+              "path": ["api", "alerts", "my-alerts"],
+              "query": [{"key": "status", "value": "completed"}]
+            }
+          }
+        },
+        {
+          "name": "Get Alert By ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {"key": "Authorization", "value": "Bearer {{volunteer_token}}"}
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/alerts/{{alert_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "alerts", "{{alert_id}}"]
+            }
+          }
+        },
+        {
+          "name": "Get Tree Alerts",
+          "request": {
+            "method": "GET",
+            "header": [
+              {"key": "Authorization", "value": "Bearer {{volunteer_token}}"}
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/alerts/tree/{{tree_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "alerts", "tree", "{{tree_id}}"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "5. Admin Monitoring",
+      "item": [
+        {
+          "name": "Get All Alerts",
+          "request": {
+            "method": "GET",
+            "header": [
+              {"key": "Authorization", "value": "Bearer {{admin_token}}"}
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/alerts?page=1&limit=20&status=pending&priority=critical",
+              "host": ["{{base_url}}"],
+              "path": ["api", "alerts"],
+              "query": [
+                {"key": "page", "value": "1"},
+                {"key": "limit", "value": "20"},
+                {"key": "status", "value": "pending"},
+                {"key": "priority", "value": "critical"}
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Alert Statistics",
+          "request": {
+            "method": "GET",
+            "header": [
+              {"key": "Authorization", "value": "Bearer {{admin_token}}"}
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/alerts/statistics",
+              "host": ["{{base_url}}"],
+              "path": ["api", "alerts", "statistics"]
+            }
+          }
+        },
+        {
+          "name": "Get Volunteer Leaderboard",
+          "request": {
+            "method": "GET",
+            "header": [
+              {"key": "Authorization", "value": "Bearer {{admin_token}}"}
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/alerts/leaderboard?limit=10",
+              "host": ["{{base_url}}"],
+              "path": ["api", "alerts", "leaderboard"],
+              "query": [{"key": "limit", "value": "10"}]
+            }
+          }
+        },
+        {
+          "name": "Get Alerts Map Data",
+          "request": {
+            "method": "GET",
+            "header": [
+              {"key": "Authorization", "value": "Bearer {{admin_token}}"}
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/alerts/map?status=pending",
+              "host": ["{{base_url}}"],
+              "path": ["api", "alerts", "map"],
+              "query": [{"key": "status", "value": "pending"}]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
