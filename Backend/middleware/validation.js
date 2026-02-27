@@ -1,4 +1,4 @@
-// Backend\middleware\validation.js
+// Backend/middleware/validation.js
 const logger = require('../utils/logger');
 
 const validatePolygon = (req, res, next) => {
@@ -12,6 +12,7 @@ const validatePolygon = (req, res, next) => {
       });
     }
 
+    // Check if coordinates exist
     if (!polygon.coordinates) {
       return res.status(400).json({
         success: false,
@@ -19,26 +20,42 @@ const validatePolygon = (req, res, next) => {
       });
     }
 
-    // Validate GeoJSON format
-    if (polygon.type !== 'Polygon') {
-        return res.status(400).json({
+    // More flexible type checking - accept both formats
+    // Some clients send { type: "Polygon", coordinates: [...] }
+    // Others send { coordinates: [...] } without type
+    if (polygon.type && polygon.type !== 'Polygon') {
+      return res.status(400).json({
         success: false,
-        error: 'Coordinates must be of type Polygon'
+        error: 'If type is provided, it must be "Polygon"'
       });
     }
 
     // Validate coordinates array
     const coordinates = polygon.coordinates;
-    if (!Array.isArray(coordinates) || coordinates.length === 0) {
+    if (!Array.isArray(coordinates)) {
       return res.status(400).json({
         success: false,
-        error: 'Invalid coordinates format'
+        error: 'Coordinates must be an array'
       });
     }
 
-    // Validate each coordinate ring
-    const firstRing = coordinates[0];
-    if (!Array.isArray(firstRing) || firstRing.length < 4) {
+    // Handle different coordinate formats
+    let ring;
+    if (Array.isArray(coordinates[0]) && Array.isArray(coordinates[0][0])) {
+      // It's a GeoJSON polygon coordinates array (with rings)
+      ring = coordinates[0];
+    } else if (Array.isArray(coordinates[0]) && coordinates[0].length === 2) {
+      // It's a simple ring
+      ring = coordinates;
+    } else {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid coordinates format: expected array of [lng, lat] pairs'
+      });
+    }
+
+    // Validate ring has enough points
+    if (!Array.isArray(ring) || ring.length < 4) {
       return res.status(400).json({
         success: false,
         error: 'Polygon must have at least 4 points'
@@ -46,9 +63,15 @@ const validatePolygon = (req, res, next) => {
     }
 
     // Check if polygon is closed (first and last point should be equal)
-    const firstPoint = firstRing[0];
-    const lastPoint = firstRing[firstRing.length - 1];
-    if (firstPoint[0] !== lastPoint[0] || firstPoint[1] !== lastPoint[1]) {
+    const firstPoint = ring[0];
+    const lastPoint = ring[ring.length - 1];
+    
+    // Allow small floating point differences
+    const tolerance = 0.000001;
+    const isClosed = Math.abs(firstPoint[0] - lastPoint[0]) < tolerance && 
+                     Math.abs(firstPoint[1] - lastPoint[1]) < tolerance;
+    
+    if (!isClosed) {
       return res.status(400).json({
         success: false,
         error: 'Polygon must be closed (first and last coordinates must match)'
@@ -56,8 +79,22 @@ const validatePolygon = (req, res, next) => {
     }
 
     // Validate coordinate ranges (longitude: -180 to 180, latitude: -90 to 90)
-    for (const point of firstRing) {
+    for (const point of ring) {
+      if (!Array.isArray(point) || point.length < 2) {
+        return res.status(400).json({
+          success: false,
+          error: 'Each point must be an array of [longitude, latitude]'
+        });
+      }
+      
       const [lng, lat] = point;
+      if (typeof lng !== 'number' || typeof lat !== 'number') {
+        return res.status(400).json({
+          success: false,
+          error: 'Coordinates must be numbers'
+        });
+      }
+      
       if (lng < -180 || lng > 180 || lat < -90 || lat > 90) {
         return res.status(400).json({
           success: false,
@@ -72,7 +109,7 @@ const validatePolygon = (req, res, next) => {
     logger.error('Polygon validation error:', error);
     return res.status(400).json({
       success: false,
-      error: 'Invalid polygon data'
+      error: 'Invalid polygon data: ' + error.message
     });
   }
 };
