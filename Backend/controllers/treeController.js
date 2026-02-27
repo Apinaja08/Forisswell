@@ -18,7 +18,6 @@ const canAccessTree = (user, tree) => {
   return tree.owner && tree.owner.toString() === user.id;
 };
 
-// @route   POST /api/trees (PROTECTED)
 exports.createTree = asyncHandler(async (req, res) => {
   const treeData = { ...req.body, owner: req.user.id };
 
@@ -79,7 +78,6 @@ exports.getTrees = asyncHandler(async (req, res) => {
   });
 });
 
-// @route   GET /api/trees/:id (PROTECTED)
 exports.getTree = asyncHandler(async (req, res) => {
   const tree = await Tree.findOne({ _id: req.params.id, isActive: true }).populate(
     "owner",
@@ -101,7 +99,6 @@ exports.getTree = asyncHandler(async (req, res) => {
   });
 });
 
-// @route   PUT /api/trees/:id (PROTECTED)
 exports.updateTree = asyncHandler(async (req, res) => {
   const tree = await Tree.findOne({ _id: req.params.id, isActive: true });
   if (!tree) {
@@ -170,7 +167,6 @@ exports.updateTree = asyncHandler(async (req, res) => {
   });
 });
 
-// @route   DELETE /api/trees/:id (PROTECTED) - soft delete
 exports.deleteTree = asyncHandler(async (req, res) => {
   const tree = await Tree.findOne({ _id: req.params.id, isActive: true });
   if (!tree) {
