@@ -42,7 +42,8 @@ Backend/
     ├── weatherService.js
     ├── reverseGeocodingService.js
     ├── riskAnalysisService.js
-    ├── collectEarthService.js
+    ├── sentinelHubService.js
+    ├── overpassService.js
     ├── calenderService.js
     └── notificationService.js
 ```
@@ -76,9 +77,16 @@ JWT_EXPIRES_IN=7d
 CLIENT_URL=http://localhost:5173
 OPENWEATHER_API_KEY=your_openweathermap_api_key
 
-# Optional (risk analysis; uses mock data if key missing)
-COLLECT_EARTH_API_URL=https://api.collect.earth/v1
-COLLECT_EARTH_API_KEY=your_collect_earth_api_key
+# Optional (risk analysis via Sentinel Hub; uses mock data if keys missing)
+SENTINEL_HUB_CLIENT_ID=your_sentinel_hub_client_id
+SENTINEL_HUB_CLIENT_SECRET=your_sentinel_hub_client_secret
+
+GOOGLE_CLIENT_ID=your_google_client_id
+GOOGLE_CLIENT_SECRET=your_google_client_secret
+GOOGLE_REDIRECT_URI=http://localhost:5000/auth/google/callback
+
+#Geocoding
+DEFAULT_BASE_URL = https://nominatim.openstreetmap.org
 
 # Optional (email notifications)
 EMAIL_HOST=smtp.gmail.com
@@ -615,9 +623,22 @@ curl -sS "$BASE_URL/api/weather-care/67b5a1234abc123456789012" \
 
 ## 5) Risk Assessment (All Protected)
 
-> If `COLLECT_EARTH_API_KEY` is not configured, the service uses mock data.
+> Uses **Sentinel Hub** (Copernicus Dataspace) for satellite analysis and **Overpass API** (OpenStreetMap) for encroachment data.  
+> If `SENTINEL_HUB_CLIENT_ID` / `SENTINEL_HUB_CLIENT_SECRET` are not configured, the service falls back to mock data automatically.
+
+### Polygon Validation Rules
+
+The `validatePolygon` middleware enforces these rules — your request body **must** match:
+
+- `polygon.type` must equal `"Polygon"` (top-level field on the polygon object)
+- `polygon.coordinates` must be an array of rings: `[ [ [lng, lat], ... ] ]`
+- The first ring must have **at least 4 points**
+- The ring must be **closed** (first point === last point)
+- All coordinates must be valid: longitude `−180 to 180`, latitude `−90 to 90`
 
 ### POST `/api/risk/analyze`
+
+> 📌 **Save the `_id`** from the response — you'll need it for GET, PUT, and DELETE below.
 
 ```bash
 curl -sS -X POST "$BASE_URL/api/risk/analyze" \
@@ -625,18 +646,16 @@ curl -sS -X POST "$BASE_URL/api/risk/analyze" \
   -H "Content-Type: application/json" \
   -d '{
     "polygon": {
-      "id": "polygon-001",
-      "name": "Sample Conservation Area",
+      "id": "sinharaja-001",
+      "name": "Sinharaja Rain Forest",
       "type": "Polygon",
-      "coordinates": [
-        [
-          [79.8600, 6.9270],
-          [79.8650, 6.9270],
-          [79.8650, 6.9300],
-          [79.8600, 6.9300],
-          [79.8600, 6.9270]
-        ]
-      ]
+      "coordinates": [[
+        [80.3833, 6.3833],
+        [80.4500, 6.3833],
+        [80.4500, 6.4200],
+        [80.3833, 6.4200],
+        [80.3833, 6.3833]
+      ]]
     }
   }'
 ```
@@ -645,61 +664,49 @@ curl -sS -X POST "$BASE_URL/api/risk/analyze" \
 {
   "success": true,
   "data": {
-    "_id": "67b5a1234abc1234567890aa",
-    "polygonId": "polygon-001",
-    "name": "Sample Conservation Area",
+    "_id": "69a1cf77b5e686055381546b",
+    "polygonId": "sinharaja-001",
+    "name": "Sinharaja Rain Forest",
     "coordinates": {
       "type": "Polygon",
-      "coordinates": [
-        [
-          [79.86, 6.927],
-          [79.865, 6.927],
-          [79.865, 6.93],
-          [79.86, 6.93],
-          [79.86, 6.927]
-        ]
-      ]
+      "coordinates": [[
+        [80.3833, 6.3833],
+        [80.45,   6.3833],
+        [80.45,   6.42],
+        [80.3833, 6.42],
+        [80.3833, 6.3833]
+      ]]
     },
-    "analysisDate": "2026-02-27T10:20:00.000Z",
-    "riskLevel": "high",
-    "riskScore": 66,
+    "analysisDate": "2026-02-27T17:08:07.168Z",
+    "riskLevel": "low",
+    "riskScore": 6,
     "factors": {
-      "treeCoverLoss": 42,
-      "degradationRate": 12,
-      "fireRisk": 58,
-      "encroachmentRisk": 24,
-      "illegalLoggingProbability": 75
+      "treeCoverLoss": 1,
+      "degradationRate": 3.06,
+      "fireRisk": 4,
+      "encroachmentRisk": 20,
+      "illegalLoggingProbability": 15
     },
     "satelliteData": {
-      "source": "CollectEarthOnline",
-      "imageryDate": "2026-02-27T10:20:00.000Z",
+      "source": "Sentinel-2 L2A",
+      "imageryDate": "2026-02-27T17:08:07.155Z",
       "confidence": 85,
-      "changeDetected": true,
-      "treeCoverPercentage": 58,
+      "changeDetected": false,
+      "treeCoverPercentage": 99,
       "historicalComparison": {
-        "fiveYearChange": 3,
-        "tenYearChange": 7
+        "fiveYearChange": 3.1,
+        "tenYearChange": 3.1
       }
     },
-    "actions": [
-      {
-        "type": "alert",
-        "status": "pending",
-        "triggeredAt": "2026-02-27T10:20:00.000Z",
-        "completedAt": null,
-        "assignedTo": null,
-        "notes": "Urgent: HIGH risk detected"
-      }
-    ],
+    "actions": [],
     "metadata": {
       "createdBy": "system",
-      "updatedAt": "2026-02-27T10:20:00.000Z",
-      "tags": [],
-      "region": null,
-      "country": null
+      "updatedAt": "2026-02-27T17:08:07.156Z",
+      "tags": ["low", "sentinel-hub"],
+      "region": "Unknown Region"
     },
-    "createdAt": "2026-02-27T10:20:00.000Z",
-    "updatedAt": "2026-02-27T10:20:00.000Z",
+    "createdAt": "2026-02-27T17:08:07.175Z",
+    "updatedAt": "2026-02-27T17:08:07.175Z",
     "__v": 0
   }
 }
@@ -717,11 +724,11 @@ curl -sS "$BASE_URL/api/risk/high?page=1&limit=20&sortBy=riskScore&order=desc" \
   "success": true,
   "data": [
     {
-      "_id": "67b5a1234abc1234567890aa",
-      "polygonId": "polygon-001",
-      "name": "Sample Conservation Area",
+      "_id": "69a1cf77b5e686055381546b",
+      "polygonId": "colombo-fringe-001",
+      "name": "Colombo Urban Fringe - Kaduwela",
       "riskLevel": "high",
-      "riskScore": 66
+      "riskScore": 74
     }
   ],
   "pagination": {
@@ -745,14 +752,11 @@ curl -sS "$BASE_URL/api/risk/stats" \
   "success": true,
   "data": {
     "byLevel": [
-      {
-        "_id": "high",
-        "count": 1,
-        "avgRiskScore": 66,
-        "maxRiskScore": 66
-      }
+      { "_id": "high",   "count": 1, "avgRiskScore": 74.0, "maxRiskScore": 74 },
+      { "_id": "medium", "count": 2, "avgRiskScore": 48.5, "maxRiskScore": 55 },
+      { "_id": "low",    "count": 1, "avgRiskScore": 22.0, "maxRiskScore": 22 }
     ],
-    "total": 1,
+    "total": 4,
     "critical": 0,
     "criticalPercentage": "0.00"
   }
@@ -762,7 +766,7 @@ curl -sS "$BASE_URL/api/risk/stats" \
 ### GET `/api/risk/:id`
 
 ```bash
-curl -sS "$BASE_URL/api/risk/67b5a1234abc1234567890aa" \
+curl -sS "$BASE_URL/api/risk/69a1cf77b5e686055381546b" \
   -H "Authorization: Bearer $TOKEN"
 ```
 
@@ -770,11 +774,24 @@ curl -sS "$BASE_URL/api/risk/67b5a1234abc1234567890aa" \
 {
   "success": true,
   "data": {
-    "_id": "67b5a1234abc1234567890aa",
-    "polygonId": "polygon-001",
-    "name": "Sample Conservation Area",
-    "riskLevel": "high",
-    "riskScore": 66
+    "_id": "69a1cf77b5e686055381546b",
+    "polygonId": "sinharaja-001",
+    "name": "Sinharaja Rain Forest",
+    "riskLevel": "low",
+    "riskScore": 22,
+    "factors": {
+      "treeCoverLoss": 18,
+      "degradationRate": 8,
+      "fireRisk": 20,
+      "encroachmentRisk": 12,
+      "illegalLoggingProbability": 15
+    },
+    "satelliteData": {
+      "source": "Sentinel-2 L2A",
+      "confidence": 85,
+      "changeDetected": false,
+      "treeCoverPercentage": 82
+    }
   }
 }
 ```
@@ -782,17 +799,32 @@ curl -sS "$BASE_URL/api/risk/67b5a1234abc1234567890aa" \
 ### PUT `/api/risk/update/:id`
 
 ```bash
-curl -sS -X PUT "$BASE_URL/api/risk/update/67b5a1234abc1234567890aa" \
+curl -sS -X PUT "$BASE_URL/api/risk/update/69a1cf77b5e686055381546b" \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
     "riskLevel": "medium",
-    "riskScore": 42,
+    "riskScore": 45,
+    "factors": {
+      "treeCoverLoss": 30,
+      "degradationRate": 20,
+      "fireRisk": 25,
+      "encroachmentRisk": 15,
+      "illegalLoggingProbability": 10
+    },
     "metadata": {
-      "tags": ["review"],
-      "region": "Western Province",
-      "country": "Sri Lanka"
-    }
+      "region": "Ratnapura District",
+      "country": "Sri Lanka",
+      "tags": ["medium", "sentinel-hub", "reviewed"]
+    },
+    "actions": [
+      {
+        "type": "inspection",
+        "status": "in_progress",
+        "notes": "Ranger patrol scheduled for Sinharaja buffer zone",
+        "assignedTo": "ranger-team-south-01"
+      }
+    ]
   }'
 ```
 
@@ -800,15 +832,14 @@ curl -sS -X PUT "$BASE_URL/api/risk/update/67b5a1234abc1234567890aa" \
 {
   "success": true,
   "data": {
-    "_id": "67b5a1234abc1234567890aa",
-    "polygonId": "polygon-001",
-    "name": "Sample Conservation Area",
+    "_id": "69a1cf77b5e686055381546b",
+    "name": "Sinharaja Rain Forest",
     "riskLevel": "medium",
-    "riskScore": 42,
+    "riskScore": 45,
     "metadata": {
-      "tags": ["review"],
-      "region": "Western Province",
-      "country": "Sri Lanka"
+      "region": "Ratnapura District",
+      "country": "Sri Lanka",
+      "tags": ["medium", "sentinel-hub", "reviewed"]
     }
   }
 }
@@ -817,7 +848,7 @@ curl -sS -X PUT "$BASE_URL/api/risk/update/67b5a1234abc1234567890aa" \
 ### DELETE `/api/risk/:id`
 
 ```bash
-curl -sS -X DELETE "$BASE_URL/api/risk/67b5a1234abc1234567890aa" \
+curl -sS -X DELETE "$BASE_URL/api/risk/69a1cf77b5e686055381546b" \
   -H "Authorization: Bearer $TOKEN"
 ```
 
@@ -844,29 +875,20 @@ curl -sS "$BASE_URL/api/events?page=1&limit=10&eventType=workshop&city=Colombo&s
   "data": [
     {
       "_id": "67b5a1234abc1234567890bb",
-      "title": "Tree Planting Workshop",
-      "description": "Learn how to plant and care for young trees.",
+      "title": "Sinharaja Forest Conservation Workshop",
+      "description": "Learn about Sri Lanka's rainforest ecosystem and conservation efforts.",
       "eventType": "workshop",
       "startDate": "2026-03-10T09:00:00.000Z",
       "endDate": "2026-03-10T11:00:00.000Z",
       "location": {
-        "address": "Viharamahadevi Park",
+        "address": "Viharamahadevi Park Auditorium",
         "city": "Colombo",
-        "coordinates": { "lat": 6.9271, "lng": 79.8612 }
+        "coordinates": { "lat": 6.9171, "lng": 79.8612 }
       },
       "maxParticipants": 50,
       "currentParticipants": 1,
-      "participants": [
-        {
-          "user": "67b5a1234abc123456789001",
-          "joinedAt": "2026-02-27T10:30:00.000Z",
-          "status": "confirmed"
-        }
-      ],
-      "tags": ["trees", "community"],
-      "images": [],
+      "tags": ["conservation", "rainforest", "community"],
       "status": "upcoming",
-      "reminders": true,
       "createdBy": "67b5a1234abc123456789001",
       "createdAt": "2026-02-27T10:30:00.000Z",
       "updatedAt": "2026-02-27T10:30:00.000Z",
@@ -893,27 +915,19 @@ curl -sS "$BASE_URL/api/events/67b5a1234abc1234567890bb"
   "success": true,
   "data": {
     "_id": "67b5a1234abc1234567890bb",
-    "title": "Tree Planting Workshop",
-    "description": "Learn how to plant and care for young trees.",
+    "title": "Sinharaja Forest Conservation Workshop",
+    "description": "Learn about Sri Lanka's rainforest ecosystem and conservation efforts.",
     "eventType": "workshop",
     "startDate": "2026-03-10T09:00:00.000Z",
     "endDate": "2026-03-10T11:00:00.000Z",
     "location": {
-      "address": "Viharamahadevi Park",
+      "address": "Viharamahadevi Park Auditorium",
       "city": "Colombo",
-      "coordinates": { "lat": 6.9271, "lng": 79.8612 }
+      "coordinates": { "lat": 6.9171, "lng": 79.8612 }
     },
     "maxParticipants": 50,
     "currentParticipants": 1,
-    "participants": [
-      {
-        "user": "67b5a1234abc123456789001",
-        "joinedAt": "2026-02-27T10:30:00.000Z",
-        "status": "confirmed"
-      }
-    ],
-    "tags": ["trees", "community"],
-    "images": [],
+    "tags": ["conservation", "rainforest", "community"],
     "status": "upcoming",
     "reminders": true,
     "createdBy": "67b5a1234abc123456789001",
@@ -955,7 +969,7 @@ curl -sS "$BASE_URL/api/events/67b5a1234abc1234567890bb/participants"
 ### GET `/api/events/search/nearby` (Public; query: `lat`, `lng`, `radius`)
 
 ```bash
-curl -sS "$BASE_URL/api/events/search/nearby?lat=6.9271&lng=79.8612&radius=10"
+curl -sS "$BASE_URL/api/events/search/nearby?lat=7.2906&lng=80.6337&radius=15"
 ```
 
 ```json
@@ -963,12 +977,12 @@ curl -sS "$BASE_URL/api/events/search/nearby?lat=6.9271&lng=79.8612&radius=10"
   "success": true,
   "data": [
     {
-      "_id": "67b5a1234abc1234567890bb",
-      "title": "Tree Planting Workshop",
-      "eventType": "workshop",
+      "_id": "67b5a1234abc1234567890bc",
+      "title": "Knuckles Range Tree Planting Drive",
+      "eventType": "tree_planting",
       "location": {
-        "address": "Viharamahadevi Park",
-        "city": "Colombo"
+        "address": "Knuckles Mountain Range Trailhead, Deanston",
+        "city": "Kandy"
       },
       "status": "upcoming"
     }
@@ -989,7 +1003,7 @@ curl -sS "$BASE_URL/api/events/user/created" \
   "data": [
     {
       "_id": "67b5a1234abc1234567890bb",
-      "title": "Tree Planting Workshop",
+      "title": "Sinharaja Forest Conservation Workshop",
       "eventType": "workshop",
       "createdBy": "67b5a1234abc123456789001"
     }
@@ -1010,7 +1024,7 @@ curl -sS "$BASE_URL/api/events/user/joined" \
   "data": [
     {
       "_id": "67b5a1234abc1234567890bb",
-      "title": "Tree Planting Workshop",
+      "title": "Sinharaja Forest Conservation Workshop",
       "eventType": "workshop",
       "status": "upcoming"
     }
@@ -1025,18 +1039,18 @@ curl -sS -X POST "$BASE_URL/api/events" \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
-    "title": "Community Garden Meetup",
-    "description": "Monthly meetup to maintain and expand the community garden.",
-    "eventType": "community_garden",
-    "startDate": "2026-03-15T08:00:00.000Z",
-    "endDate": "2026-03-15T10:30:00.000Z",
+    "title": "Knuckles Range Tree Planting Drive",
+    "description": "Community tree planting drive to restore native species along the Knuckles buffer zone.",
+    "eventType": "tree_planting",
+    "startDate": "2026-03-22T07:00:00.000Z",
+    "endDate": "2026-03-22T12:00:00.000Z",
     "location": {
-      "address": "Community Center, Main St",
-      "city": "Colombo",
-      "coordinates": { "lat": 6.9280, "lng": 79.8620 }
+      "address": "Knuckles Mountain Range Trailhead, Deanston",
+      "city": "Kandy",
+      "coordinates": { "lat": 7.4200, "lng": 80.7900 }
     },
-    "maxParticipants": 25,
-    "tags": ["garden", "volunteers"],
+    "maxParticipants": 40,
+    "tags": ["reforestation", "knuckles", "native-species"],
     "images": [],
     "status": "upcoming",
     "reminders": true
@@ -1048,27 +1062,19 @@ curl -sS -X POST "$BASE_URL/api/events" \
   "success": true,
   "data": {
     "_id": "67b5a1234abc1234567890bc",
-    "title": "Community Garden Meetup",
-    "description": "Monthly meetup to maintain and expand the community garden.",
-    "eventType": "community_garden",
-    "startDate": "2026-03-15T08:00:00.000Z",
-    "endDate": "2026-03-15T10:30:00.000Z",
+    "title": "Knuckles Range Tree Planting Drive",
+    "description": "Community tree planting drive to restore native species along the Knuckles buffer zone.",
+    "eventType": "tree_planting",
+    "startDate": "2026-03-22T07:00:00.000Z",
+    "endDate": "2026-03-22T12:00:00.000Z",
     "location": {
-      "address": "Community Center, Main St",
-      "city": "Colombo",
-      "coordinates": { "lat": 6.928, "lng": 79.862 }
+      "address": "Knuckles Mountain Range Trailhead, Deanston",
+      "city": "Kandy",
+      "coordinates": { "lat": 7.42, "lng": 80.79 }
     },
-    "maxParticipants": 25,
+    "maxParticipants": 40,
     "currentParticipants": 1,
-    "participants": [
-      {
-        "user": "67b5a1234abc123456789001",
-        "joinedAt": "2026-02-27T10:40:00.000Z",
-        "status": "confirmed"
-      }
-    ],
-    "images": [],
-    "tags": ["garden", "volunteers"],
+    "tags": ["reforestation", "knuckles", "native-species"],
     "status": "upcoming",
     "reminders": true,
     "createdBy": "67b5a1234abc123456789001",
@@ -1088,7 +1094,8 @@ curl -sS -X PUT "$BASE_URL/api/events/67b5a1234abc1234567890bc" \
   -H "Content-Type: application/json" \
   -d '{
     "status": "ongoing",
-    "maxParticipants": 30
+    "maxParticipants": 50,
+    "description": "Updated: buses arranged from Kandy town. Bring water and gloves."
   }'
 ```
 
@@ -1098,7 +1105,8 @@ curl -sS -X PUT "$BASE_URL/api/events/67b5a1234abc1234567890bc" \
   "data": {
     "_id": "67b5a1234abc1234567890bc",
     "status": "ongoing",
-    "maxParticipants": 30
+    "maxParticipants": 50,
+    "description": "Updated: buses arranged from Kandy town. Bring water and gloves."
   },
   "message": "Event updated successfully"
 }
@@ -1234,8 +1242,8 @@ Some endpoints (notably `/api/risk/*` and `/api/events/*`) use an `error` field 
 | JWT_EXPIRES_IN | Token expiration | 7d |
 | CLIENT_URL | Frontend URL for CORS | http://localhost:5173 |
 | OPENWEATHER_API_KEY | OpenWeatherMap API key | - |
-| COLLECT_EARTH_API_URL | Collect Earth API base URL | https://api.collect.earth/v1 |
-| COLLECT_EARTH_API_KEY | Collect Earth API key (optional; uses mock if missing) | - |
+| SENTINEL_HUB_CLIENT_ID | Sentinel Hub OAuth client ID (optional; uses mock if missing) | - |
+| SENTINEL_HUB_CLIENT_SECRET | Sentinel Hub OAuth client secret (optional; uses mock if missing) | - |
 | NOMINATIM_BASE_URL | Reverse geocoding base URL | https://nominatim.openstreetmap.org |
 | NOMINATIM_USER_AGENT | Reverse geocoding User-Agent header | Forisswell/1.0 (...) |
 | NOMINATIM_EMAIL | Reverse geocoding contact email (optional) | - |

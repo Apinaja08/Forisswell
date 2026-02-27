@@ -1,6 +1,6 @@
 const Risk = require('../models/Risk');
 const sentinelHubService = require('./sentinelHubService');
-const overpassService = require('./overpassService');
+const overpassService = require('./overPassService');
 const logger = require('../utils/logger');
 
 class RiskAnalysisService {
