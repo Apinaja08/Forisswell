@@ -4,6 +4,7 @@ const router = express.Router();
 const {
   createTree,
   getTrees,
+  getAllTrees,
   getTree,
   updateTree,
   deleteTree
@@ -14,6 +15,7 @@ const { protect } = require("../middleware/auth");
 router.use(protect);
 
 router.route("/").get(getTrees).post(createTree);
+router.get("/all", getAllTrees);
 router.route("/:id").get(getTree).put(updateTree).delete(deleteTree);
 
 module.exports = router;

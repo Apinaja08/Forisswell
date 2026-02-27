@@ -78,6 +78,26 @@ exports.getTrees = asyncHandler(async (req, res) => {
   });
 });
 
+// @route   GET /api/trees/all (PROTECTED)
+// @desc    Get all active trees for any authenticated user (information view)
+exports.getAllTrees = asyncHandler(async (req, res) => {
+  const filter = { isActive: true };
+
+  if (req.query.species) filter.species = req.query.species;
+  if (req.query.status) filter.status = req.query.status;
+
+  const trees = await Tree.find(filter)
+    .sort({ createdAt: -1 })
+    .populate("owner", "fullName role");
+
+  res.status(200).json({
+    success: true,
+    message: "All trees fetched successfully",
+    count: trees.length,
+    data: { trees },
+  });
+});
+
 exports.getTree = asyncHandler(async (req, res) => {
   const tree = await Tree.findOne({ _id: req.params.id, isActive: true }).populate(
     "owner",
