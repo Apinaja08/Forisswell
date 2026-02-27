@@ -93,6 +93,8 @@ Backend/
 │   ├── reverseGeocodingService.js      # Nominatim geocoding
 │   ├── notificationService.js          # Socket.io broadcast service
 │   ├── riskAnalysisService.js          # Risk assessment logic
+│   ├── sentinelHubService.js           # Sentinel Hub satellite data
+│   ├── overpassService.js              # OpenStreetMap encroachment data
 │   ├── calenderService.js              # Calendar integration
 │   └── pushNotificationService.js      # PWA push (currently disabled)
 │
@@ -161,6 +163,10 @@ Backend/
    VOLUNTEER_MATCH_RADIUS=5             # Radius in kilometers
    ALERT_CHECK_INTERVAL=300000          # Check every 5 minutes (in ms)
    ALERT_ACCEPT_TIMEOUT=30              # Minutes before alert expires
+   
+   # Sentinel Hub (Risk Analysis - optional, uses mock data if missing)
+   SENTINEL_HUB_CLIENT_ID=your_sentinel_hub_client_id
+   SENTINEL_HUB_CLIENT_SECRET=your_sentinel_hub_client_secret
    
    # Push Notifications (Optional - currently disabled)
    VAPID_PUBLIC_KEY=your_public_key_here
@@ -601,89 +607,563 @@ Returns geospatial data for visualizing alerts on a map.
 
 ## 📅 Event Management Endpoints
 
-### Create Event
+### GET `/api/events` (Public; query: `page`, `limit`, `eventType`, `startDate`, `endDate`, `city`, `status`)
+
+```http
+GET /api/events?page=1&limit=10&eventType=workshop&city=Colombo&status=upcoming
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "_id": "67b5a1234abc1234567890bb",
+      "title": "Sinharaja Forest Conservation Workshop",
+      "description": "Learn about Sri Lanka's rainforest ecosystem and conservation efforts.",
+      "eventType": "workshop",
+      "startDate": "2026-03-10T09:00:00.000Z",
+      "endDate": "2026-03-10T11:00:00.000Z",
+      "location": {
+        "address": "Viharamahadevi Park Auditorium",
+        "city": "Colombo",
+        "coordinates": { "lat": 6.9171, "lng": 79.8612 }
+      },
+      "maxParticipants": 50,
+      "currentParticipants": 1,
+      "tags": ["conservation", "rainforest", "community"],
+      "status": "upcoming",
+      "createdBy": "67b5a1234abc123456789001",
+      "createdAt": "2026-02-27T10:30:00.000Z",
+      "updatedAt": "2026-02-27T10:30:00.000Z",
+      "__v": 0
+    }
+  ],
+  "pagination": {
+    "page": 1,
+    "limit": 10,
+    "total": 1,
+    "pages": 1
+  }
+}
+```
+
+### GET `/api/events/:id` (Public)
+
+```http
+GET /api/events/67b5a1234abc1234567890bb
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "_id": "67b5a1234abc1234567890bb",
+    "title": "Sinharaja Forest Conservation Workshop",
+    "description": "Learn about Sri Lanka's rainforest ecosystem and conservation efforts.",
+    "eventType": "workshop",
+    "startDate": "2026-03-10T09:00:00.000Z",
+    "endDate": "2026-03-10T11:00:00.000Z",
+    "location": {
+      "address": "Viharamahadevi Park Auditorium",
+      "city": "Colombo",
+      "coordinates": { "lat": 6.9171, "lng": 79.8612 }
+    },
+    "maxParticipants": 50,
+    "currentParticipants": 1,
+    "tags": ["conservation", "rainforest", "community"],
+    "status": "upcoming",
+    "reminders": true,
+    "createdBy": "67b5a1234abc123456789001",
+    "createdAt": "2026-02-27T10:30:00.000Z",
+    "updatedAt": "2026-02-27T10:30:00.000Z",
+    "__v": 0
+  }
+}
+```
+
+### GET `/api/events/:id/participants` (Public)
+
+```http
+GET /api/events/67b5a1234abc1234567890bb/participants
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "confirmed": [
+      {
+        "_id": "67b5a1234abc123456789001",
+        "fullName": "John Doe",
+        "email": "john@example.com",
+        "role": "user",
+        "isActive": true,
+        "joinedAt": "2026-02-27T10:30:00.000Z"
+      }
+    ],
+    "waitlist": [],
+    "total": 1,
+    "maxParticipants": 50,
+    "availableSpots": 49
+  }
+}
+```
+
+### GET `/api/events/search/nearby` (Public; query: `lat`, `lng`, `radius`)
+
+```http
+GET /api/events/search/nearby?lat=7.2906&lng=80.6337&radius=15
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "_id": "67b5a1234abc1234567890bc",
+      "title": "Knuckles Range Tree Planting Drive",
+      "eventType": "tree_planting",
+      "location": {
+        "address": "Knuckles Mountain Range Trailhead, Deanston",
+        "city": "Kandy"
+      },
+      "status": "upcoming"
+    }
+  ]
+}
+```
+
+### GET `/api/events/user/created` (Protected)
+
+```http
+GET /api/events/user/created
+Authorization: Bearer {token}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "_id": "67b5a1234abc1234567890bb",
+      "title": "Sinharaja Forest Conservation Workshop",
+      "eventType": "workshop",
+      "createdBy": "67b5a1234abc123456789001"
+    }
+  ]
+}
+```
+
+### GET `/api/events/user/joined` (Protected)
+
+```http
+GET /api/events/user/joined
+Authorization: Bearer {token}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "_id": "67b5a1234abc1234567890bb",
+      "title": "Sinharaja Forest Conservation Workshop",
+      "eventType": "workshop",
+      "status": "upcoming"
+    }
+  ]
+}
+```
+
+### POST `/api/events` (Protected)
+
 ```http
 POST /api/events
 Authorization: Bearer {token}
 Content-Type: application/json
 
 {
-  "title": "Tree Planting Event",
-  "description": "Community tree planting",
-  "eventDate": "2026-03-15T10:00:00Z",
+  "title": "Knuckles Range Tree Planting Drive",
+  "description": "Community tree planting drive to restore native species along the Knuckles buffer zone.",
+  "eventType": "tree_planting",
+  "startDate": "2026-03-22T07:00:00.000Z",
+  "endDate": "2026-03-22T12:00:00.000Z",
   "location": {
-    "type": "Point",
-    "coordinates": [79.8612, 6.9271]
+    "address": "Knuckles Mountain Range Trailhead, Deanston",
+    "city": "Kandy",
+    "coordinates": { "lat": 7.4200, "lng": 80.7900 }
   },
-  "trees": ["treeId1", "treeId2"]
+  "maxParticipants": 40,
+  "tags": ["reforestation", "knuckles", "native-species"],
+  "images": [],
+  "status": "upcoming",
+  "reminders": true
 }
 ```
 
-### Get All Events
-```http
-GET /api/events
-Authorization: Bearer {token}
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "_id": "67b5a1234abc1234567890bc",
+    "title": "Knuckles Range Tree Planting Drive",
+    "description": "Community tree planting drive to restore native species along the Knuckles buffer zone.",
+    "eventType": "tree_planting",
+    "startDate": "2026-03-22T07:00:00.000Z",
+    "endDate": "2026-03-22T12:00:00.000Z",
+    "location": {
+      "address": "Knuckles Mountain Range Trailhead, Deanston",
+      "city": "Kandy",
+      "coordinates": { "lat": 7.42, "lng": 80.79 }
+    },
+    "maxParticipants": 40,
+    "currentParticipants": 1,
+    "tags": ["reforestation", "knuckles", "native-species"],
+    "status": "upcoming",
+    "reminders": true,
+    "createdBy": "67b5a1234abc123456789001",
+    "createdAt": "2026-02-27T10:40:00.000Z",
+    "updatedAt": "2026-02-27T10:40:00.000Z",
+    "__v": 0
+  },
+  "message": "Event created successfully"
+}
 ```
 
-### Get Single Event
+### PUT `/api/events/:id` (Protected; creator only)
+
 ```http
-GET /api/events/{eventId}
-Authorization: Bearer {token}
-```
-
-### Update Event
-```http
-PUT /api/events/{eventId}
-Authorization: Bearer {token}
-```
-
-### Delete Event
-```http
-DELETE /api/events/{eventId}
-Authorization: Bearer {token}
-```
-
----
-
-## 🚨 Risk Management Endpoints
-
-### Create Risk Assessment
-```http
-POST /api/risk
+PUT /api/events/67b5a1234abc1234567890bc
 Authorization: Bearer {token}
 Content-Type: application/json
 
 {
-  "tree": "treeId",
-  "riskType": "pest_infestation",
-  "severity": "high",
-  "description": "Detected pest activity",
-  "recommendations": ["Apply organic pesticide", "Monitor daily"]
+  "status": "ongoing",
+  "maxParticipants": 50,
+  "description": "Updated: buses arranged from Kandy town. Bring water and gloves."
 }
 ```
 
-### Get All Risks
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "_id": "67b5a1234abc1234567890bc",
+    "status": "ongoing",
+    "maxParticipants": 50,
+    "description": "Updated: buses arranged from Kandy town. Bring water and gloves."
+  },
+  "message": "Event updated successfully"
+}
+```
+
+### DELETE `/api/events/:id` (Protected; creator or admin)
+
 ```http
-GET /api/risk
+DELETE /api/events/67b5a1234abc1234567890bc
 Authorization: Bearer {token}
 ```
 
-### Get Risks for Tree
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Event deleted successfully"
+}
+```
+
+### POST `/api/events/:id/join` (Protected)
+
 ```http
-GET /api/risk/tree/{treeId}
+POST /api/events/67b5a1234abc1234567890bb/join
 Authorization: Bearer {token}
 ```
 
-### Update Risk
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "event": {
+      "_id": "67b5a1234abc1234567890bb",
+      "currentParticipants": 2
+    },
+    "participationStatus": "confirmed"
+  },
+  "message": "Successfully joined event"
+}
+```
+
+### POST `/api/events/:id/leave` (Protected)
+
 ```http
-PUT /api/risk/{riskId}
+POST /api/events/67b5a1234abc1234567890bb/leave
 Authorization: Bearer {token}
 ```
 
-### Delete Risk
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Successfully left the event"
+}
+```
+
+---
+
+## 🚨 Risk Assessment Endpoints
+
+> Uses **Sentinel Hub** (Copernicus Dataspace) for satellite analysis and **Overpass API** (OpenStreetMap) for encroachment data.  
+> If `SENTINEL_HUB_CLIENT_ID` / `SENTINEL_HUB_CLIENT_SECRET` are not configured, the service falls back to mock data automatically.
+
+### Polygon Validation Rules
+
+The `validatePolygon` middleware enforces these rules — your request body **must** match:
+
+- `polygon.type` must equal `"Polygon"` (top-level field on the polygon object)
+- `polygon.coordinates` must be an array of rings: `[ [ [lng, lat], ... ] ]`
+- The first ring must have **at least 4 points**
+- The ring must be **closed** (first point === last point)
+- All coordinates must be valid: longitude `−180 to 180`, latitude `−90 to 90`
+
+### POST `/api/risk/analyze`
+
+> 📌 **Save the `_id`** from the response — you'll need it for GET, PUT, and DELETE below.
+
 ```http
-DELETE /api/risk/{riskId}
+POST /api/risk/analyze
 Authorization: Bearer {token}
+Content-Type: application/json
+
+{
+  "polygon": {
+    "id": "sinharaja-001",
+    "name": "Sinharaja Rain Forest",
+    "type": "Polygon",
+    "coordinates": [[
+      [80.3833, 6.3833],
+      [80.4500, 6.3833],
+      [80.4500, 6.4200],
+      [80.3833, 6.4200],
+      [80.3833, 6.3833]
+    ]]
+  }
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "_id": "69a1cf77b5e686055381546b",
+    "polygonId": "sinharaja-001",
+    "name": "Sinharaja Rain Forest",
+    "coordinates": {
+      "type": "Polygon",
+      "coordinates": [[
+        [80.3833, 6.3833],
+        [80.45,   6.3833],
+        [80.45,   6.42],
+        [80.3833, 6.42],
+        [80.3833, 6.3833]
+      ]]
+    },
+    "analysisDate": "2026-02-27T17:08:07.168Z",
+    "riskLevel": "low",
+    "riskScore": 6,
+    "factors": {
+      "treeCoverLoss": 1,
+      "degradationRate": 3.06,
+      "fireRisk": 4,
+      "encroachmentRisk": 20,
+      "illegalLoggingProbability": 15
+    },
+    "satelliteData": {
+      "source": "Sentinel-2 L2A",
+      "imageryDate": "2026-02-27T17:08:07.155Z",
+      "confidence": 85,
+      "changeDetected": false,
+      "treeCoverPercentage": 99,
+      "historicalComparison": {
+        "fiveYearChange": 3.1,
+        "tenYearChange": 3.1
+      }
+    },
+    "actions": [],
+    "metadata": {
+      "createdBy": "system",
+      "updatedAt": "2026-02-27T17:08:07.156Z",
+      "tags": ["low", "sentinel-hub"],
+      "region": "Unknown Region"
+    },
+    "createdAt": "2026-02-27T17:08:07.175Z",
+    "updatedAt": "2026-02-27T17:08:07.175Z",
+    "__v": 0
+  }
+}
+```
+
+### GET `/api/risk/high` (query: `page`, `limit`, `sortBy`, `order`)
+
+```http
+GET /api/risk/high?page=1&limit=20&sortBy=riskScore&order=desc
+Authorization: Bearer {token}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "_id": "69a1cf77b5e686055381546b",
+      "polygonId": "colombo-fringe-001",
+      "name": "Colombo Urban Fringe - Kaduwela",
+      "riskLevel": "high",
+      "riskScore": 74
+    }
+  ],
+  "pagination": {
+    "page": 1,
+    "limit": 20,
+    "total": 1,
+    "pages": 1
+  }
+}
+```
+
+### GET `/api/risk/stats`
+
+```http
+GET /api/risk/stats
+Authorization: Bearer {token}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "byLevel": [
+      { "_id": "high",   "count": 1, "avgRiskScore": 74.0, "maxRiskScore": 74 },
+      { "_id": "medium", "count": 2, "avgRiskScore": 48.5, "maxRiskScore": 55 },
+      { "_id": "low",    "count": 1, "avgRiskScore": 6.0,  "maxRiskScore": 6  }
+    ],
+    "total": 4,
+    "critical": 0,
+    "criticalPercentage": "0.00"
+  }
+}
+```
+
+### GET `/api/risk/:id`
+
+```http
+GET /api/risk/69a1cf77b5e686055381546b
+Authorization: Bearer {token}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "_id": "69a1cf77b5e686055381546b",
+    "polygonId": "sinharaja-001",
+    "name": "Sinharaja Rain Forest",
+    "riskLevel": "low",
+    "riskScore": 6,
+    "factors": {
+      "treeCoverLoss": 1,
+      "degradationRate": 3.06,
+      "fireRisk": 4,
+      "encroachmentRisk": 20,
+      "illegalLoggingProbability": 15
+    },
+    "satelliteData": {
+      "source": "Sentinel-2 L2A",
+      "confidence": 85,
+      "changeDetected": false,
+      "treeCoverPercentage": 99
+    }
+  }
+}
+```
+
+### PUT `/api/risk/update/:id`
+
+```http
+PUT /api/risk/update/69a1cf77b5e686055381546b
+Authorization: Bearer {token}
+Content-Type: application/json
+
+{
+  "riskLevel": "medium",
+  "riskScore": 45,
+  "factors": {
+    "treeCoverLoss": 30,
+    "degradationRate": 20,
+    "fireRisk": 25,
+    "encroachmentRisk": 15,
+    "illegalLoggingProbability": 10
+  },
+  "metadata": {
+    "region": "Ratnapura District",
+    "country": "Sri Lanka",
+    "tags": ["medium", "sentinel-hub", "reviewed"]
+  },
+  "actions": [
+    {
+      "type": "inspection",
+      "status": "in_progress",
+      "notes": "Ranger patrol scheduled for Sinharaja buffer zone",
+      "assignedTo": "ranger-team-south-01"
+    }
+  ]
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "_id": "69a1cf77b5e686055381546b",
+    "name": "Sinharaja Rain Forest",
+    "riskLevel": "medium",
+    "riskScore": 45,
+    "metadata": {
+      "region": "Ratnapura District",
+      "country": "Sri Lanka",
+      "tags": ["medium", "sentinel-hub", "reviewed"]
+    }
+  }
+}
+```
+
+### DELETE `/api/risk/:id`
+
+```http
+DELETE /api/risk/69a1cf77b5e686055381546b
+Authorization: Bearer {token}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Risk assessment deleted successfully"
+}
 ```
 
 ---
