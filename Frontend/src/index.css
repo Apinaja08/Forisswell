@@ -1,0 +1,115 @@
+@import url("https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: light;
+  }
+
+  * {
+    @apply border-slate-200;
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply min-h-screen bg-gradient-to-b from-leaf-50 via-white to-slate-50 font-body text-slate-800 antialiased;
+    background-attachment: fixed;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    @apply font-display text-slate-900;
+  }
+
+  a {
+    @apply transition-colors duration-200;
+  }
+}
+
+@layer components {
+  .app-container {
+    @apply mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8;
+  }
+
+  .surface-card {
+    @apply rounded-2xl border border-white/60 bg-white/85 p-5 shadow-soft backdrop-blur;
+  }
+
+  .surface-card-muted {
+    @apply rounded-2xl border border-slate-200/70 bg-white/70 p-5 shadow-soft;
+  }
+
+  .btn {
+    @apply inline-flex items-center justify-center rounded-xl px-4 py-2.5 text-sm font-semibold transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-leaf-500 focus-visible:ring-offset-2;
+  }
+
+  .btn-primary {
+    @apply btn bg-leaf-600 text-white hover:bg-leaf-700 hover:shadow-md;
+  }
+
+  .btn-secondary {
+    @apply btn bg-slate-100 text-slate-700 hover:bg-slate-200;
+  }
+
+  .btn-ghost {
+    @apply btn bg-transparent text-slate-600 hover:bg-slate-100;
+  }
+
+  .btn-danger {
+    @apply btn bg-red-600 text-white hover:bg-red-700;
+  }
+
+  .input {
+    @apply w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm text-slate-800 outline-none transition duration-200 placeholder:text-slate-400 focus:border-leaf-500 focus:ring-2 focus:ring-leaf-200;
+  }
+
+  .label {
+    @apply mb-1.5 block text-sm font-semibold text-slate-700;
+  }
+
+  .chip {
+    @apply inline-flex items-center rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-600;
+  }
+
+  .page-title {
+    @apply text-2xl font-bold tracking-tight sm:text-3xl;
+  }
+
+  .page-subtitle {
+    @apply mt-2 text-sm text-slate-600 sm:text-base;
+  }
+
+  .hero-overlay {
+    @apply pointer-events-none absolute inset-0 bg-hero-glow;
+  }
+
+  .table-wrap {
+    @apply overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-soft;
+  }
+
+  .table-base {
+    @apply min-w-full divide-y divide-slate-200;
+  }
+
+  .table-head {
+    @apply bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500;
+  }
+
+  .table-cell {
+    @apply whitespace-nowrap px-4 py-3 text-sm text-slate-700;
+  }
+
+  .table-row {
+    @apply transition-colors hover:bg-leaf-50/50;
+  }
+}
