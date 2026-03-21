@@ -1,6 +1,11 @@
 import { useEffect, useState } from "react";
 import api from "../services/api";
 import LoadingSpinner from "../components/common/LoadingSpinner";
+import SectionHeader from "../components/ui/SectionHeader";
+import Card from "../components/ui/Card";
+import Badge from "../components/ui/Badge";
+import FeedbackMessage from "../components/ui/FeedbackMessage";
+import EmptyState from "../components/ui/EmptyState";
 
 function EventsPage() {
   const [events, setEvents] = useState([]);
@@ -35,48 +40,79 @@ function EventsPage() {
   }, [page, city]);
 
   return (
-    <section className="space-y-4">
-      <div className="card flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-xl font-semibold">Events</h1>
-          <p className="text-sm text-slate-600">Connected to `GET /api/events` with pagination.</p>
-        </div>
-        <input
-          className="input sm:w-64"
-          placeholder="Filter by city"
-          value={city}
-          onChange={(e) => {
-            setCity(e.target.value);
-            setPage(1);
-          }}
+    <section className="space-y-6">
+      <Card className="border-leaf-100 bg-white/90">
+        <SectionHeader
+          title="Community Events"
+          subtitle="Browse workshops and intervention activities with filters and pagination."
+          right={<Badge variant="info">Page {page}</Badge>}
         />
-      </div>
+      </Card>
 
-      <div className="flex gap-2">
-        <button className="btn-secondary" onClick={() => setPage((p) => Math.max(1, p - 1))}>
-          Previous
-        </button>
-        <span className="self-center text-sm text-slate-600">Page {page}</span>
-        <button className="btn-secondary" onClick={() => setPage((p) => p + 1)}>
-          Next
-        </button>
-      </div>
+      <Card>
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+          <div className="w-full sm:max-w-sm">
+            <label className="label" htmlFor="city-filter">Filter by City</label>
+            <input
+              id="city-filter"
+              className="input"
+              placeholder="e.g. Colombo"
+              value={city}
+              onChange={(e) => {
+                setCity(e.target.value);
+                setPage(1);
+              }}
+            />
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              className="btn-secondary"
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              disabled={page === 1}
+            >
+              Previous
+            </button>
+            <span className="chip">Page {page}</span>
+            <button className="btn-secondary" onClick={() => setPage((p) => p + 1)}>
+              Next
+            </button>
+          </div>
+        </div>
+      </Card>
 
       {loading ? <LoadingSpinner label="Loading events..." /> : null}
-      {error ? <p className="text-sm text-red-600">{error}</p> : null}
+      {error ? <FeedbackMessage tone="error">{error}</FeedbackMessage> : null}
 
       {!loading && !error ? (
-        <div className="grid gap-3 md:grid-cols-2">
-          {events.map((event) => (
-            <article key={event._id} className="card">
-              <h2 className="font-semibold">{event.title}</h2>
-              <p className="text-sm text-slate-600">Type: {event.eventType}</p>
-              <p className="text-sm text-slate-600">City: {event.location?.city || "-"}</p>
-              <p className="text-sm text-slate-600">Status: {event.status}</p>
-            </article>
-          ))}
-          {events.length === 0 ? <p className="text-slate-500">No events found.</p> : null}
-        </div>
+        events.length > 0 ? (
+          <div className="grid gap-4 lg:grid-cols-2">
+            {events.map((event) => (
+              <Card key={event._id} className="transition hover:-translate-y-0.5 hover:shadow-card">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <h2 className="text-lg font-semibold text-slate-900">{event.title}</h2>
+                    <p className="mt-1 text-sm text-slate-600">{event.description || "No description available."}</p>
+                  </div>
+                  <Badge variant="leaf">{event.status || "upcoming"}</Badge>
+                </div>
+                <div className="mt-4 grid gap-2 text-sm text-slate-600 sm:grid-cols-2">
+                  <p><span className="font-semibold text-slate-800">Type:</span> {event.eventType || "-"}</p>
+                  <p><span className="font-semibold text-slate-800">City:</span> {event.location?.city || "-"}</p>
+                  <p><span className="font-semibold text-slate-800">Start:</span> {event.startDate ? new Date(event.startDate).toLocaleString() : "-"}</p>
+                  <p><span className="font-semibold text-slate-800">Capacity:</span> {event.currentParticipants || 0}/{event.maxParticipants || 0}</p>
+                </div>
+              </Card>
+            ))}
+          </div>
+        ) : (
+          <EmptyState
+            title="No events found"
+            description="Try another city filter or move to the next page to discover upcoming activities."
+            actionLabel="View Dashboard"
+            actionTo="/dashboard"
+          />
+        )
       ) : null}
     </section>
   );

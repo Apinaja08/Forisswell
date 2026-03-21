@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
+import FeedbackMessage from "../components/ui/FeedbackMessage";
+import AuthFrame from "../components/auth/AuthFrame";
 
 function LoginPage() {
   const { login, loading } = useAuth();
@@ -24,34 +26,53 @@ function LoginPage() {
   };
 
   return (
-    <section className="mx-auto max-w-md card">
-      <h1 className="mb-4 text-xl font-semibold">Login</h1>
-      <form className="space-y-3" onSubmit={onSubmit}>
-        <input
-          className="input"
-          type="email"
-          placeholder="Email"
-          value={form.email}
-          onChange={(e) => setForm((prev) => ({ ...prev, email: e.target.value }))}
-          required
-        />
-        <input
-          className="input"
-          type="password"
-          placeholder="Password"
-          value={form.password}
-          onChange={(e) => setForm((prev) => ({ ...prev, password: e.target.value }))}
-          required
-        />
-        {error ? <p className="text-sm text-red-600">{error}</p> : null}
+    <AuthFrame
+      showPanel={false}
+      formTitle="Sign In"
+      formDescription="Use your account credentials to continue."
+      footer={
+        <>
+          No account yet?{" "}
+          <Link to="/register" className="font-semibold text-leaf-700 hover:text-leaf-800">
+            Create one
+          </Link>
+        </>
+      }
+    >
+      <form className="space-y-4" onSubmit={onSubmit}>
+        <div>
+          <label className="label" htmlFor="email">Email</label>
+          <input
+            id="email"
+            className="input"
+            type="email"
+            placeholder="you@example.com"
+            value={form.email}
+            onChange={(e) => setForm((prev) => ({ ...prev, email: e.target.value }))}
+            required
+          />
+        </div>
+
+        <div>
+          <label className="label" htmlFor="password">Password</label>
+          <input
+            id="password"
+            className="input"
+            type="password"
+            placeholder="Enter your password"
+            value={form.password}
+            onChange={(e) => setForm((prev) => ({ ...prev, password: e.target.value }))}
+            required
+          />
+        </div>
+
+        {error ? <FeedbackMessage tone="error">{error}</FeedbackMessage> : null}
+
         <button className="btn-primary w-full" type="submit" disabled={loading}>
           {loading ? "Signing in..." : "Sign In"}
         </button>
       </form>
-      <p className="mt-4 text-sm text-slate-600">
-        No account? <Link to="/register" className="text-brand-700">Create one</Link>
-      </p>
-    </section>
+    </AuthFrame>
   );
 }
 
