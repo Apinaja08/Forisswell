@@ -10,6 +10,7 @@ import AlertsPage from "./pages/AlertsPage";
 import ProfilePage from "./pages/ProfilePage";
 import NotFoundPage from "./pages/NotFoundPage";
 import LandingPage from "./pages/LandingPage";
+import RiskAnalysisPage from "./pages/RiskAnalysisPage";
 
 function App() {
   const location = useLocation();
@@ -69,6 +70,14 @@ function App() {
             element={
               <ProtectedRoute>
                 <ProfilePage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/risk-analysis"
+            element={
+              <ProtectedRoute>
+                <RiskAnalysisPage />
               </ProtectedRoute>
             }
           />
