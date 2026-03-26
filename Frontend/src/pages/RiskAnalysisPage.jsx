@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
-import { MapContainer, TileLayer, Polygon, useMap } from "react-leaflet";
+import { useEffect, useState, useRef } from "react";
+import { MapContainer, TileLayer, Polygon, useMap, useMapEvents } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
+import L from "leaflet";
 import api from "../services/api";
 import LoadingSpinner from "../components/common/LoadingSpinner";
 import SectionHeader from "../components/ui/SectionHeader";
@@ -34,6 +35,105 @@ const COLORS = {
   fire: "#f97316"
 };
 
+// Custom component to handle map clicks
+function MapClickHandler({ drawing, onMapClick }) {
+  useMapEvents({
+    click: (e) => {
+      if (drawing) {
+        onMapClick(e);
+      }
+    }
+  });
+  return null;
+}
+
+// Custom component to add drawing instructions
+function DrawingInstructions({ drawing }) {
+  const map = useMap();
+  
+  useEffect(() => {
+    if (drawing) {
+      // Create a custom control for drawing instructions
+      const controlDiv = L.DomUtil.create('div', 'drawing-instructions');
+      controlDiv.innerHTML = `
+        <div style="background: rgba(0,0,0,0.8); color: white; padding: 8px 12px; border-radius: 4px; font-size: 14px; font-weight: bold;">
+          ✏️ Drawing Mode Active - Click on map to add points
+        </div>
+      `;
+      
+      const customControl = L.Control.extend({
+        onAdd: function() {
+          return controlDiv;
+        },
+        onRemove: function() {
+          // Clean up if needed
+        }
+      });
+      
+      const control = new customControl({ position: 'topright' });
+      control.addTo(map);
+      
+      // Store control for cleanup
+      map._drawingControl = control;
+      
+      // Change cursor to crosshair
+      map.getContainer().style.cursor = 'crosshair';
+      
+      return () => {
+        if (map._drawingControl) {
+          map.removeControl(map._drawingControl);
+          map.getContainer().style.cursor = '';
+        }
+      };
+    } else {
+      // Remove control and reset cursor
+      if (map._drawingControl) {
+        map.removeControl(map._drawingControl);
+        map.getContainer().style.cursor = '';
+      }
+    }
+  }, [drawing, map]);
+  
+  return null;
+}
+
+// Custom component to display points
+function DrawingPoints({ points }) {
+  const map = useMap();
+  
+  useEffect(() => {
+    if (!points || points.length === 0) return;
+    
+    // Create markers for each point
+    const markers = points.map((point, index) => {
+      const marker = L.marker([point[1], point[0]], {
+        icon: L.divIcon({
+          className: 'drawing-marker',
+          html: `<div style="background: #22c55e; color: white; width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; border: 2px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.3);">${index + 1}</div>`,
+          iconSize: [24, 24],
+          iconAnchor: [12, 12]
+        })
+      }).addTo(map);
+      
+      // Add tooltip
+      marker.bindTooltip(`Point ${index + 1}`, { permanent: false, direction: 'top' });
+      
+      return marker;
+    });
+    
+    // Store markers for cleanup
+    map._drawingMarkers = markers;
+    
+    return () => {
+      if (map._drawingMarkers) {
+        map._drawingMarkers.forEach(marker => marker.remove());
+      }
+    };
+  }, [points, map]);
+  
+  return null;
+}
+
 const RiskAnalysisPage = () => {
   const [riskAssessments, setRiskAssessments] = useState([]);
   const [stats, setStats] = useState(null);
@@ -53,7 +153,6 @@ const RiskAnalysisPage = () => {
     pages: 0
   });
 
-  const [polygonCoordinates, setPolygonCoordinates] = useState([]);
   const [showAnalysisModal, setShowAnalysisModal] = useState(false);
   const [analysisForm, setAnalysisForm] = useState({
     name: "",
@@ -62,6 +161,8 @@ const RiskAnalysisPage = () => {
   });
   const [analysisLoading, setAnalysisLoading] = useState(false);
   const [analysisResult, setAnalysisResult] = useState(null);
+  const [mapCenter, setMapCenter] = useState([20, 0]); // Default center
+  const [mapZoom, setMapZoom] = useState(2);
 
   // Fetch risk assessments
   const fetchRiskAssessments = async () => {
@@ -76,7 +177,7 @@ const RiskAnalysisPage = () => {
         ...(filters.endDate && { endDate: filters.endDate })
       };
 
-      const response = await api.get("/risk/high", { params });
+      const response = await api.get("/risk", { params });
       
       if (response.data.success) {
         setRiskAssessments(response.data.data);
@@ -113,7 +214,7 @@ const RiskAnalysisPage = () => {
   // Handle risk analysis
   const handleAnalyzeRisk = async () => {
     if (!analysisForm.name || analysisForm.coordinates.length < 4) {
-      setError("Please provide a name and draw a valid polygon on the map");
+      setError("Please provide a name and draw a valid polygon on the map (minimum 3 points, and polygon must be closed)");
       return;
     }
 
@@ -148,6 +249,7 @@ const RiskAnalysisPage = () => {
     if (!analysisForm.drawing) return;
     
     const { lat, lng } = e.latlng;
+    console.log(`Point added: [${lng}, ${lat}]`);
     setAnalysisForm(prev => ({
       ...prev,
       coordinates: [...prev.coordinates, [lng, lat]]
@@ -156,12 +258,16 @@ const RiskAnalysisPage = () => {
 
   const completePolygon = () => {
     if (analysisForm.coordinates.length >= 3) {
-      // Close the polygon
+      // Close the polygon by adding the first point at the end
+      const closedCoordinates = [...analysisForm.coordinates, analysisForm.coordinates[0]];
       setAnalysisForm(prev => ({
         ...prev,
         drawing: false,
-        coordinates: [...prev.coordinates, prev.coordinates[0]]
+        coordinates: closedCoordinates
       }));
+      console.log("Polygon completed with", closedCoordinates.length, "points");
+    } else {
+      setError("Need at least 3 points to complete a polygon");
     }
   };
 
@@ -171,6 +277,13 @@ const RiskAnalysisPage = () => {
       coordinates: [],
       drawing: false
     }));
+    setError("");
+  };
+
+  const startDrawing = () => {
+    clearPolygon();
+    setAnalysisForm(prev => ({ ...prev, drawing: true }));
+    setError("");
   };
 
   // Get risk level color and badge
@@ -190,12 +303,6 @@ const RiskAnalysisPage = () => {
     value: item.count,
     color: COLORS[item._id]
   })) || [];
-
-  // Historical trend data
-  const historicalData = selectedRisk?.satelliteData?.historicalComparison ? [
-    { year: "5 years ago", change: selectedRisk.satelliteData.historicalComparison.fiveYearChange },
-    { year: "10 years ago", change: selectedRisk.satelliteData.historicalComparison.tenYearChange }
-  ] : [];
 
   return (
     <div className="space-y-6">
@@ -662,59 +769,101 @@ const RiskAnalysisPage = () => {
 
                   <div>
                     <label className="label">Draw Polygon on Map</label>
-                    <div className="border rounded-lg overflow-hidden" style={{ height: "400px" }}>
+                    <div className="border rounded-lg overflow-hidden" style={{ height: "500px" }}>
                       <MapContainer
-                        center={[0, 0]}
-                        zoom={2}
+                        center={mapCenter}
+                        zoom={mapZoom}
                         style={{ height: "100%", width: "100%" }}
-                        onClick={handleMapClick}
                       >
                         <TileLayer
                           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
                         />
+                        <MapClickHandler 
+                          drawing={analysisForm.drawing} 
+                          onMapClick={handleMapClick}
+                        />
+                        <DrawingInstructions drawing={analysisForm.drawing} />
+                        <DrawingPoints points={analysisForm.coordinates} />
                         {analysisForm.coordinates.length > 0 && (
                           <Polygon
                             positions={analysisForm.coordinates.map(coord => [coord[1], coord[0]])}
-                            pathOptions={{ color: "green", weight: 2 }}
+                            pathOptions={{ color: "#22c55e", weight: 3, fillColor: "#22c55e", fillOpacity: 0.2 }}
                           />
                         )}
                       </MapContainer>
                     </div>
-                    <div className="mt-2 flex gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setAnalysisForm(prev => ({ ...prev, drawing: !prev.drawing }))}
-                        className={`btn-secondary text-sm ${analysisForm.drawing ? "bg-green-500 text-white" : ""}`}
-                      >
-                        {analysisForm.drawing ? "Drawing Mode Active" : "Start Drawing"}
-                      </button>
-                      {analysisForm.coordinates.length >= 3 && (
+                    
+                    <div className="mt-3 flex gap-2 flex-wrap">
+                      {!analysisForm.drawing && analysisForm.coordinates.length === 0 && (
                         <button
                           type="button"
-                          onClick={completePolygon}
-                          className="btn-primary text-sm"
+                          onClick={startDrawing}
+                          className="btn-primary"
                         >
-                          Complete Polygon
+                          ✏️ Start Drawing
                         </button>
                       )}
-                      <button
-                        type="button"
-                        onClick={clearPolygon}
-                        className="btn-secondary text-sm"
-                      >
-                        Clear
-                      </button>
+                      {analysisForm.drawing && (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => setAnalysisForm(prev => ({ ...prev, drawing: false }))}
+                            className="btn-secondary"
+                          >
+                            Cancel Drawing
+                          </button>
+                          <button
+                            type="button"
+                            onClick={completePolygon}
+                            disabled={analysisForm.coordinates.length < 3}
+                            className={`btn-primary ${analysisForm.coordinates.length < 3 ? "opacity-50 cursor-not-allowed" : ""}`}
+                          >
+                            ✓ Complete Polygon
+                          </button>
+                        </>
+                      )}
+                      {analysisForm.coordinates.length > 0 && !analysisForm.drawing && (
+                        <>
+                          <button
+                            type="button"
+                            onClick={startDrawing}
+                            className="btn-secondary"
+                          >
+                            ✏️ Continue Drawing
+                          </button>
+                          <button
+                            type="button"
+                            onClick={clearPolygon}
+                            className="btn-secondary text-red-600 hover:text-red-700"
+                          >
+                            🗑️ Clear Polygon
+                          </button>
+                        </>
+                      )}
                     </div>
+                    
                     {analysisForm.coordinates.length > 0 && (
-                      <div className="mt-2 text-sm text-slate-600">
-                        Points: {analysisForm.coordinates.length} {analysisForm.coordinates.length >= 3 ? "✓ Ready for analysis" : "(need at least 3 points)"}
+                      <div className="mt-2 p-3 bg-slate-50 rounded-lg">
+                        <div className="text-sm font-medium text-slate-700 mb-1">
+                          Polygon Points: {analysisForm.coordinates.length - (analysisForm.coordinates.length > 3 && analysisForm.coordinates[analysisForm.coordinates.length - 1] === analysisForm.coordinates[0] ? 1 : 0)} points
+                        </div>
+                        <div className="text-xs text-slate-500">
+                          {analysisForm.coordinates.length >= 3 ? 
+                            "✓ Ready for analysis" : 
+                            `Need ${3 - analysisForm.coordinates.length} more point(s) to create a valid polygon`}
+                        </div>
+                        {analysisForm.drawing && (
+                          <div className="text-xs text-blue-600 mt-1">
+                            💡 Click on the map to add points. Press "Complete Polygon" when done.
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
 
                   {analysisForm.coordinates.length >= 3 && (
-                    <div className="flex gap-3">
+                    <div className="flex gap-3 pt-2">
                       <button
                         onClick={handleAnalyzeRisk}
                         disabled={analysisLoading}
