@@ -53,7 +53,6 @@ function DrawingInstructions({ drawing }) {
   
   useEffect(() => {
     if (drawing) {
-      // Create a custom control for drawing instructions
       const controlDiv = L.DomUtil.create('div', 'drawing-instructions');
       controlDiv.innerHTML = `
         <div style="background: rgba(0,0,0,0.8); color: white; padding: 8px 12px; border-radius: 4px; font-size: 14px; font-weight: bold;">
@@ -65,18 +64,12 @@ function DrawingInstructions({ drawing }) {
         onAdd: function() {
           return controlDiv;
         },
-        onRemove: function() {
-          // Clean up if needed
-        }
+        onRemove: function() {}
       });
       
       const control = new customControl({ position: 'topright' });
       control.addTo(map);
-      
-      // Store control for cleanup
       map._drawingControl = control;
-      
-      // Change cursor to crosshair
       map.getContainer().style.cursor = 'crosshair';
       
       return () => {
@@ -86,7 +79,6 @@ function DrawingInstructions({ drawing }) {
         }
       };
     } else {
-      // Remove control and reset cursor
       if (map._drawingControl) {
         map.removeControl(map._drawingControl);
         map.getContainer().style.cursor = '';
@@ -104,7 +96,6 @@ function DrawingPoints({ points }) {
   useEffect(() => {
     if (!points || points.length === 0) return;
     
-    // Create markers for each point
     const markers = points.map((point, index) => {
       const marker = L.marker([point[1], point[0]], {
         icon: L.divIcon({
@@ -115,13 +106,10 @@ function DrawingPoints({ points }) {
         })
       }).addTo(map);
       
-      // Add tooltip
       marker.bindTooltip(`Point ${index + 1}`, { permanent: false, direction: 'top' });
-      
       return marker;
     });
     
-    // Store markers for cleanup
     map._drawingMarkers = markers;
     
     return () => {
@@ -133,6 +121,77 @@ function DrawingPoints({ points }) {
   
   return null;
 }
+
+// Loading Modal Component
+const AnalysisLoadingModal = ({ progress, currentStep, stepStatus }) => {
+  const steps = [
+    { key: "satellite", label: "Fetching Satellite Data", icon: "🛰️" },
+    { key: "deforestation", label: "Analyzing Deforestation Patterns", icon: "🌳" },
+    { key: "historical", label: "Processing Historical Trends", icon: "📊" },
+    { key: "encroachment", label: "Checking Encroachment Risk", icon: "🏠" },
+    { key: "settlements", label: "Identifying Nearby Settlements", icon: "📍" },
+    { key: "calculating", label: "Calculating Risk Score", icon: "⚡" }
+  ];
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-[60]">
+      <div className="bg-white rounded-xl max-w-md w-full mx-4 p-6 shadow-2xl">
+        <div className="text-center mb-6">
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-green-100 mb-4">
+            <span className="text-3xl">🌲</span>
+          </div>
+          <h3 className="text-xl font-bold text-slate-900">Analyzing Area</h3>
+          <p className="text-sm text-slate-600 mt-1">{currentStep}</p>
+        </div>
+
+        {/* Progress Bar */}
+        <div className="mb-6">
+          <div className="flex justify-between text-sm text-slate-600 mb-1">
+            <span>Progress</span>
+            <span>{Math.round(progress)}%</span>
+          </div>
+          <div className="h-2 bg-slate-200 rounded-full overflow-hidden">
+            <div 
+              className="h-full bg-green-500 rounded-full transition-all duration-500 ease-out"
+              style={{ width: `${progress}%` }}
+            />
+          </div>
+        </div>
+
+        {/* Steps */}
+        <div className="space-y-3">
+          {steps.map((step) => (
+            <div key={step.key} className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-full flex items-center justify-center bg-slate-100">
+                <span className="text-sm">{step.icon}</span>
+              </div>
+              <div className="flex-1">
+                <div className="text-sm font-medium text-slate-700">{step.label}</div>
+                <div className="text-xs text-slate-500">
+                  {stepStatus[step.key] === "loading" && "Processing..."}
+                  {stepStatus[step.key] === "complete" && "✓ Complete"}
+                  {stepStatus[step.key] === "pending" && "Waiting..."}
+                </div>
+              </div>
+              {stepStatus[step.key] === "loading" && (
+                <div className="w-4 h-4 border-2 border-green-500 border-t-transparent rounded-full animate-spin" />
+              )}
+              {stepStatus[step.key] === "complete" && (
+                <span className="text-green-500 text-lg">✓</span>
+              )}
+            </div>
+          ))}
+        </div>
+
+        <div className="mt-6 pt-4 border-t text-center">
+          <p className="text-xs text-slate-500 animate-pulse">
+            This may take 30-60 seconds depending on area size
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 const RiskAnalysisPage = () => {
   const [riskAssessments, setRiskAssessments] = useState([]);
@@ -161,8 +220,21 @@ const RiskAnalysisPage = () => {
   });
   const [analysisLoading, setAnalysisLoading] = useState(false);
   const [analysisResult, setAnalysisResult] = useState(null);
-  const [mapCenter, setMapCenter] = useState([20, 0]); // Default center
+  const [mapCenter, setMapCenter] = useState([20, 0]);
   const [mapZoom, setMapZoom] = useState(2);
+  
+  // Loading state for analysis
+  const [analysisProgress, setAnalysisProgress] = useState(0);
+  const [analysisCurrentStep, setAnalysisCurrentStep] = useState("");
+  const [analysisStepStatus, setAnalysisStepStatus] = useState({
+    satellite: "pending",
+    deforestation: "pending",
+    historical: "pending",
+    encroachment: "pending",
+    settlements: "pending",
+    calculating: "pending"
+  });
+  const [showLoadingModal, setShowLoadingModal] = useState(false);
 
   // Fetch risk assessments
   const fetchRiskAssessments = async () => {
@@ -211,7 +283,70 @@ const RiskAnalysisPage = () => {
     fetchStats();
   }, [pagination.page, filters]);
 
-  // Handle risk analysis
+  // Simulate progress updates
+  const updateProgress = (step, progressValue) => {
+    setAnalysisCurrentStep(step);
+    setAnalysisProgress(progressValue);
+    
+    // Update step status based on progress
+    if (progressValue < 20) {
+      setAnalysisStepStatus({
+        satellite: progressValue > 5 ? "loading" : "pending",
+        deforestation: "pending",
+        historical: "pending",
+        encroachment: "pending",
+        settlements: "pending",
+        calculating: "pending"
+      });
+    } else if (progressValue < 40) {
+      setAnalysisStepStatus({
+        satellite: "complete",
+        deforestation: "loading",
+        historical: "pending",
+        encroachment: "pending",
+        settlements: "pending",
+        calculating: "pending"
+      });
+    } else if (progressValue < 60) {
+      setAnalysisStepStatus({
+        satellite: "complete",
+        deforestation: "complete",
+        historical: "loading",
+        encroachment: "pending",
+        settlements: "pending",
+        calculating: "pending"
+      });
+    } else if (progressValue < 75) {
+      setAnalysisStepStatus({
+        satellite: "complete",
+        deforestation: "complete",
+        historical: "complete",
+        encroachment: "loading",
+        settlements: "pending",
+        calculating: "pending"
+      });
+    } else if (progressValue < 90) {
+      setAnalysisStepStatus({
+        satellite: "complete",
+        deforestation: "complete",
+        historical: "complete",
+        encroachment: "complete",
+        settlements: "loading",
+        calculating: "pending"
+      });
+    } else {
+      setAnalysisStepStatus({
+        satellite: "complete",
+        deforestation: "complete",
+        historical: "complete",
+        encroachment: "complete",
+        settlements: "complete",
+        calculating: "loading"
+      });
+    }
+  };
+
+  // Handle risk analysis with progress simulation
   const handleAnalyzeRisk = async () => {
     if (!analysisForm.name || analysisForm.coordinates.length < 4) {
       setError("Please provide a name and draw a valid polygon on the map (minimum 3 points, and polygon must be closed)");
@@ -219,7 +354,21 @@ const RiskAnalysisPage = () => {
     }
 
     setAnalysisLoading(true);
+    setShowLoadingModal(true);
     setError("");
+    setAnalysisProgress(0);
+    updateProgress("Initializing...", 0);
+    
+    // Start progress simulation
+    const progressInterval = setInterval(() => {
+      setAnalysisProgress(prev => {
+        if (prev >= 95) {
+          clearInterval(progressInterval);
+          return prev;
+        }
+        return Math.min(prev + 5, 95);
+      });
+    }, 3000);
     
     try {
       const polygon = {
@@ -228,17 +377,34 @@ const RiskAnalysisPage = () => {
         type: "Polygon"
       };
       
+      updateProgress("Fetching satellite data...", 10);
+      
       const response = await api.post("/risk/analyze", { polygon });
+      
+      clearInterval(progressInterval);
+      setAnalysisProgress(100);
+      updateProgress("Analysis complete!", 100);
+      
+      // Brief delay to show 100% completion
+      await new Promise(resolve => setTimeout(resolve, 500));
       
       if (response.data.success) {
         setAnalysisResult(response.data.data);
+        setShowLoadingModal(false);
+        setShowAnalysisModal(false);
         await fetchRiskAssessments();
         await fetchStats();
+        
+        // Auto-show the result modal
+        setSelectedRisk(response.data.data);
       } else {
         setError(response.data.error || "Analysis failed");
+        setShowLoadingModal(false);
       }
     } catch (err) {
+      clearInterval(progressInterval);
       setError(err.response?.data?.error || "Failed to analyze area");
+      setShowLoadingModal(false);
     } finally {
       setAnalysisLoading(false);
     }
@@ -249,7 +415,6 @@ const RiskAnalysisPage = () => {
     if (!analysisForm.drawing) return;
     
     const { lat, lng } = e.latlng;
-    console.log(`Point added: [${lng}, ${lat}]`);
     setAnalysisForm(prev => ({
       ...prev,
       coordinates: [...prev.coordinates, [lng, lat]]
@@ -258,14 +423,12 @@ const RiskAnalysisPage = () => {
 
   const completePolygon = () => {
     if (analysisForm.coordinates.length >= 3) {
-      // Close the polygon by adding the first point at the end
       const closedCoordinates = [...analysisForm.coordinates, analysisForm.coordinates[0]];
       setAnalysisForm(prev => ({
         ...prev,
         drawing: false,
         coordinates: closedCoordinates
       }));
-      console.log("Polygon completed with", closedCoordinates.length, "points");
     } else {
       setError("Need at least 3 points to complete a polygon");
     }
@@ -306,6 +469,15 @@ const RiskAnalysisPage = () => {
 
   return (
     <div className="space-y-6">
+      {/* Loading Modal */}
+      {showLoadingModal && (
+        <AnalysisLoadingModal 
+          progress={analysisProgress}
+          currentStep={analysisCurrentStep}
+          stepStatus={analysisStepStatus}
+        />
+      )}
+
       {/* Header */}
       <Card className="border-green-100 bg-gradient-to-r from-green-50 to-emerald-50">
         <SectionHeader
