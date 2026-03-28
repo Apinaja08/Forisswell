@@ -98,6 +98,52 @@ exports.getAllTrees = asyncHandler(async (req, res) => {
   });
 });
 
+// @route   GET /api/trees/nearby (PROTECTED)
+// @desc    Get trees near provided coordinates
+exports.getNearbyTrees = asyncHandler(async (req, res) => {
+  const lon = Number(req.query.lon);
+  const lat = Number(req.query.lat);
+  const radiusKmRaw = Number(req.query.radiusKm);
+  const radiusKm = Number.isFinite(radiusKmRaw)
+    ? Math.min(50, Math.max(1, radiusKmRaw))
+    : 5;
+
+  if (!Number.isFinite(lon) || !Number.isFinite(lat)) {
+    throw createError(400, "Valid lon and lat query parameters are required");
+  }
+
+  if (lon < -180 || lon > 180 || lat < -90 || lat > 90) {
+    throw createError(400, "Coordinates out of range: lon -180..180, lat -90..90");
+  }
+
+  const filter = {
+    isActive: true,
+    location: {
+      $near: {
+        $geometry: {
+          type: "Point",
+          coordinates: [lon, lat],
+        },
+        $maxDistance: radiusKm * 1000,
+      },
+    },
+  };
+
+  if (req.query.species) filter.species = req.query.species;
+  if (req.query.status) filter.status = req.query.status;
+
+  const trees = await Tree.find(filter)
+    .sort({ createdAt: -1 })
+    .populate("owner", "fullName role");
+
+  res.status(200).json({
+    success: true,
+    message: "Nearby trees fetched successfully",
+    count: trees.length,
+    data: { trees, center: { lon, lat }, radiusKm },
+  });
+});
+
 exports.getTree = asyncHandler(async (req, res) => {
   const tree = await Tree.findOne({ _id: req.params.id, isActive: true }).populate(
     "owner",
