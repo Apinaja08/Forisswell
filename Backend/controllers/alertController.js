@@ -295,9 +295,11 @@ exports.completeAlert = asyncHandler(async (req, res, next) => {
   profile.updateStatsAfterCompletion(completionTime);
   await profile.save();
 
+  // Calculate hours for response
+  const hours = completionTime / 60;
+
   // PWA Push Notifications disabled - user preference
   // Send completion notification
-  // const hours = completionTime / 60;
   // const completionPayload = pushNotificationService.createCompletionPayload(
   //   alert,
   //   hours

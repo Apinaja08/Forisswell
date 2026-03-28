@@ -123,6 +123,8 @@ function AlertsPage() {
       // Refresh alerts
       await fetchMyAlerts();
       setError("");
+      // Switch to ongoing process tab
+      setActiveTab("ongoing");
     } catch (err) {
       const message = err.response?.data?.message || "Failed to accept alert";
       console.error(message, err);
@@ -186,6 +188,14 @@ function AlertsPage() {
 
   const displayAlerts = activeTab === "my-alerts" ? alerts : nearbyAlerts;
 
+  // Get ongoing alerts (assigned or in_progress)
+  const ongoingAlerts = alerts.filter(
+    (alert) => alert.status === "assigned" || alert.status === "in_progress"
+  );
+
+  // Get completed alerts
+  const completedAlerts = alerts.filter((alert) => alert.status === "completed");
+
   return (
     <section className="space-y-6">
       <Card className="border-leaf-100 bg-white/90">
@@ -206,7 +216,17 @@ function AlertsPage() {
               : "text-slate-600 hover:text-slate-900"
           }`}
         >
-          📋 My Alerts ({alerts.length})
+          📋 My Alerts ({alerts.filter(a => a.status === "completed").length})
+        </button>
+        <button
+          onClick={() => setActiveTab("ongoing")}
+          className={`px-4 py-2 font-medium transition ${
+            activeTab === "ongoing"
+              ? "border-b-2 border-orange-600 text-orange-600"
+              : "text-slate-600 hover:text-slate-900"
+          }`}
+        >
+          ⚡ Ongoing Process ({ongoingAlerts.length})
         </button>
         <button
           onClick={() => setActiveTab("nearby")}
@@ -224,36 +244,51 @@ function AlertsPage() {
       {error ? <FeedbackMessage tone="error">{error}</FeedbackMessage> : null}
 
       {!loading && !error ? (
-        displayAlerts.length > 0 ? (
-          <div className="grid gap-4 lg:grid-cols-2">
-            {displayAlerts.map((alert) => (
-              <AlertCard
-                key={alert._id || alert.id}
-                alert={alert}
-                onAccept={() => handleAcceptAlert(alert._id || alert.id)}
-                onStart={() => handleStartAlert(alert._id || alert.id)}
-                onComplete={() => handleCompleteAlert(alert._id || alert.id)}
-                onCancel={() => handleCancelAlert(alert._id || alert.id)}
-                isLoading={loadingAction[alert._id || alert.id] || false}
-              />
-            ))}
-          </div>
-        ) : (
-          <EmptyState
-            title={
-              activeTab === "my-alerts"
-                ? "No assigned alerts"
-                : "No nearby alerts available"
-            }
-            description={
-              activeTab === "my-alerts"
-                ? "When alerts are assigned to your account, they will appear here with priority and status details."
-                : "Move closer to trees or wait for new weather-based alerts in your area."
-            }
-            actionLabel="Go to Dashboard"
-            actionTo="/dashboard"
-          />
-        )
+        (() => {
+          let displayAlerts = [];
+          let emptyTitle = "";
+          let emptyDescription = "";
+
+          if (activeTab === "my-alerts") {
+            displayAlerts = completedAlerts;
+            emptyTitle = "No completed alerts";
+            emptyDescription =
+              "Completed alerts will appear here with their results and contributions.";
+          } else if (activeTab === "ongoing") {
+            displayAlerts = ongoingAlerts;
+            emptyTitle = "No ongoing process";
+            emptyDescription =
+              "Accept an alert to start working on it. It will appear here as an active task.";
+          } else if (activeTab === "nearby") {
+            displayAlerts = nearbyAlerts;
+            emptyTitle = "No nearby alerts available";
+            emptyDescription =
+              "Move closer to trees or wait for new weather-based alerts in your area.";
+          }
+
+          return displayAlerts.length > 0 ? (
+            <div className="grid gap-4 lg:grid-cols-2">
+              {displayAlerts.map((alert) => (
+                <AlertCard
+                  key={alert._id || alert.id}
+                  alert={alert}
+                  onAccept={() => handleAcceptAlert(alert._id || alert.id)}
+                  onStart={() => handleStartAlert(alert._id || alert.id)}
+                  onComplete={() => handleCompleteAlert(alert._id || alert.id)}
+                  onCancel={() => handleCancelAlert(alert._id || alert.id)}
+                  isLoading={loadingAction[alert._id || alert.id] || false}
+                />
+              ))}
+            </div>
+          ) : (
+            <EmptyState
+              title={emptyTitle}
+              description={emptyDescription}
+              actionLabel="Go to Dashboard"
+              actionTo="/dashboard"
+            />
+          );
+        })()
       ) : null}
     </section>
   );
