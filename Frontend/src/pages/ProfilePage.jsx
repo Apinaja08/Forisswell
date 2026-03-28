@@ -104,7 +104,6 @@ function ProfilePage() {
                   {initials}
                 </div>
                 <div>
-                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Profile Summary</p>
                   <h2 className="text-2xl font-bold text-slate-900">{profile?.fullName || "Member"}</h2>
                   <p className="mt-1 text-sm text-slate-600">{profile?.email || "-"}</p>
                 </div>
