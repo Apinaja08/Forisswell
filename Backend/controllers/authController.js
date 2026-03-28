@@ -58,6 +58,41 @@ exports.login = asyncHandler(async (req, res) => {
     throw createError(400, "Please provide email and password");
   }
 
+  // Check if .env admin credentials are provided and match
+  const adminEmail = process.env.ADMIN_EMAIL;
+  const adminPassword = process.env.ADMIN_PASSWORD;
+  
+  if (adminEmail && adminPassword && email === adminEmail && password === adminPassword) {
+    // Login as admin using .env credentials
+    const adminUser = {
+      _id: "dev-admin-user",
+      fullName: "Admin User",
+      email: email,
+      role: "admin",
+      isActive: true,
+      toObject: () => ({
+        _id: "dev-admin-user",
+        fullName: "Admin User",
+        email: email,
+        role: "admin",
+        isActive: true,
+      }),
+    };
+    
+    // Generate token with admin ID
+    const token = jwt.sign({ id: adminUser._id }, jwtSecret, {
+      expiresIn: process.env.JWT_EXPIRES_IN || "7d",
+    });
+    
+    return res.status(200).json({
+      success: true,
+      message: "Logged in successfully",
+      token,
+      data: { user: adminUser.toObject() },
+    });
+  }
+
+  // Normal database login
   const user = await User.findOne({ email }).select("+password");
   if (!user) {
     throw createError(401, "Invalid credentials");
@@ -81,6 +116,22 @@ exports.logout = asyncHandler(async (req, res) => {
 
 // @route   GET /api/auth/me (PROTECTED)
 exports.getMe = asyncHandler(async (req, res) => {
+  // Handle dev admin user
+  if (req.user.id === "dev-admin-user") {
+    return res.status(200).json({
+      success: true,
+      data: {
+        user: {
+          _id: "dev-admin-user",
+          fullName: "Admin User",
+          email: process.env.ADMIN_EMAIL,
+          role: "admin",
+          isActive: true,
+        },
+      },
+    });
+  }
+
   const user = await User.findById(req.user.id).select("-password");
   res.status(200).json({ success: true, data: { user } });
 });
