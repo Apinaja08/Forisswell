@@ -18,14 +18,22 @@ function Navbar() {
   const [open, setOpen] = useState(false);
 
   const authNav = useMemo(
-    () => [
-      { to: "/dashboard", label: "Dashboard" },
-      { to: "/trees", label: "Trees" },
-      { to: "/events", label: "Events" },
-      { to: "/alerts", label: "Alerts" },
-      { to: "/profile", label: "Profile" },
-    ],
-    []
+    () => {
+      const baseNav = [
+        { to: "/dashboard", label: "Dashboard" },
+        { to: "/trees", label: "Trees" },
+        { to: "/events", label: "Events" },
+        { to: "/profile", label: "Profile" },
+      ];
+
+      // Only show Alerts for volunteers and admins
+      if (user?.role === "volunteer" || user?.role === "admin") {
+        baseNav.splice(3, 0, { to: "/alerts", label: "Alerts" });
+      }
+
+      return baseNav;
+    },
+    [user?.role]
   );
 
   useEffect(() => {
