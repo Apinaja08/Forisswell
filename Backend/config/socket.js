@@ -32,6 +32,14 @@ function initializeSocket(server) {
         process.env.JWT_SECRET || "your-secret-key-change-this-in-production"
       );
 
+      // Handle dev admin user from .env
+      if (decoded.id === "dev-admin-user") {
+        socket.userId = "dev-admin-user";
+        socket.userRole = "admin";
+        socket.userEmail = process.env.ADMIN_EMAIL || "admin@forisswell.com";
+        return next();
+      }
+
       // Get user from database
       const user = await User.findById(decoded.id).select("-password");
 

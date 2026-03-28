@@ -26,9 +26,14 @@ function Navbar() {
         { to: "/profile", label: "Profile" },
       ];
 
-      // Only show Alerts for volunteers and admins
+      // Add Alerts for volunteers and admins
       if (user?.role === "volunteer" || user?.role === "admin") {
         baseNav.splice(3, 0, { to: "/alerts", label: "Alerts" });
+      }
+
+      // Add Admin Panel for admins (at start after dashboard)
+      if (user?.role === "admin") {
+        baseNav.splice(1, 0, { to: "/admin", label: "📊 Admin Panel" });
       }
 
       return baseNav;
