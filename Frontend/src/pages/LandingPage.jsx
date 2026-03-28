@@ -30,26 +30,48 @@ const features = [
   },
 ];
 
-const roleBenefits = [
-  {
-    role: "User",
-    value: "Manage trees, monitor weather care signals, and stay informed with preventive alerts.",
-  },
-  {
-    role: "Volunteer",
-    value: "Receive nearby alert requests, accept tasks in real time, and track your contribution impact.",
-  },
-  {
-    role: "Admin",
-    value: "Oversee risk zones, response performance, engagement metrics, and operational readiness.",
-  },
-];
-
 const impactStats = [
   { label: "Active Monitoring", value: "24/7" },
   { label: "Response Radius", value: "5km" },
   { label: "Workflow Coverage", value: "End-to-End" },
   { label: "Real-time Signals", value: "Socket Events" },
+];
+
+const impactIndicators = [
+  { label: "Response Dispatch", value: "< 3 min", detail: "from alert trigger to volunteer assignment" },
+  { label: "Situational Coverage", value: "360°", detail: "weather, tree records, and incident context" },
+  { label: "Field Coordination", value: "Live", detail: "task acceptance and completion status updates" },
+  { label: "Decision Confidence", value: "Data-Backed", detail: "risk trends and operational history in one view" },
+];
+
+const impactOutcomes = [
+  {
+    title: "Faster Incident Response",
+    text: "Alert thresholds and nearby volunteer matching reduce waiting time for urgent interventions.",
+  },
+  {
+    title: "Lower Operational Blind Spots",
+    text: "Centralized tree location, weather exposure, and status history improve field readiness.",
+  },
+  {
+    title: "Continuous Improvement Cycle",
+    text: "Each response contributes measurable outcomes that sharpen planning and prevention.",
+  },
+];
+
+const communityVoices = [
+  {
+    quote: "The alert pipeline helped us mobilize volunteers faster during sudden weather spikes.",
+    by: "Field Coordination Team",
+  },
+  {
+    quote: "Our team now has a clear operational dashboard instead of scattered spreadsheets.",
+    by: "Community Program Lead",
+  },
+  {
+    quote: "Tree records, weather context, and response tracking in one system changed our workflow.",
+    by: "Urban Green Initiative",
+  },
 ];
 
 function LandingPage() {
@@ -144,50 +166,73 @@ function LandingPage() {
         </div>
       </section>
 
-      <section id="roles" className="app-container py-14 sm:py-16">
-        <h2 className="text-3xl font-bold">Role-Based Value</h2>
-        <p className="mt-2 max-w-3xl text-slate-600">
-          Tailored workflows for citizens, volunteers, and administrators.
-        </p>
-        <div className="mt-8 grid gap-4 md:grid-cols-3">
-          {roleBenefits.map((item) => (
-            <Card key={item.role} className="relative overflow-hidden">
-              <div className="absolute -right-8 -top-8 h-24 w-24 rounded-full bg-leaf-100/60" />
-              <Badge variant="leaf">{item.role}</Badge>
-              <p className="mt-4 text-sm text-slate-600">{item.value}</p>
-            </Card>
-          ))}
-        </div>
-      </section>
+      <section id="impact" className="relative overflow-hidden border-y border-slate-200/80 bg-gradient-to-br from-white via-leaf-50/40 to-earth-50/30 py-14 sm:py-16">
+        <div className="pointer-events-none absolute -left-24 -top-16 h-56 w-56 rounded-full bg-leaf-100/60 blur-3xl" />
+        <div className="pointer-events-none absolute -right-20 bottom-0 h-48 w-48 rounded-full bg-earth-100/60 blur-3xl" />
 
-      <section id="impact" className="border-y border-slate-200/80 bg-white/80 py-14 sm:py-16">
-        <div className="app-container grid gap-6 lg:grid-cols-2">
-          <Card>
-            <h3 className="text-xl font-semibold">Platform Impact</h3>
-            <p className="mt-2 text-sm text-slate-600">
-              Improve response speed, reduce avoidable damage, and maintain transparent accountability across environmental activities.
-            </p>
-            <ul className="mt-5 space-y-3 text-sm text-slate-700">
-              <li className="flex items-start gap-2"><span className="mt-1 h-2 w-2 rounded-full bg-leaf-500" />Real-time operational alerts for time-sensitive care decisions.</li>
-              <li className="flex items-start gap-2"><span className="mt-1 h-2 w-2 rounded-full bg-leaf-500" />Structured volunteer coordination with acceptance-first fairness.</li>
-              <li className="flex items-start gap-2"><span className="mt-1 h-2 w-2 rounded-full bg-leaf-500" />Data-backed risk visibility for long-term environmental planning.</li>
-            </ul>
-          </Card>
-
-          <Card>
-            <h3 className="text-xl font-semibold">Community Voices</h3>
-            <div className="mt-4 space-y-4 text-sm text-slate-700">
-              <blockquote className="rounded-xl bg-leaf-50 p-4">
-                “The alert pipeline helped us mobilize volunteers faster during sudden weather spikes.”
-              </blockquote>
-              <blockquote className="rounded-xl bg-slate-50 p-4">
-                “Our team now has a clear operational dashboard instead of scattered spreadsheets.”
-              </blockquote>
-              <blockquote className="rounded-xl bg-earth-50 p-4">
-                “Tree records, weather context, and response tracking in one system changed our workflow.”
-              </blockquote>
+        <div className="app-container relative space-y-8">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <Badge variant="leaf">Impact Snapshot</Badge>
+              <h2 className="mt-3 text-3xl font-bold">Measured Outcomes, Not Just Activity</h2>
+              <p className="mt-2 max-w-3xl text-slate-600">
+                Forisswell strengthens response speed, coordination quality, and accountability across tree protection workflows.
+              </p>
             </div>
-          </Card>
+            <a href="#features" className="btn-ghost w-fit">
+              View Platform Features
+            </a>
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            {impactIndicators.map((item) => (
+              <Card key={item.label} className="border-slate-200/80 bg-white/90">
+                <p className="text-xs uppercase tracking-wide text-slate-500">{item.label}</p>
+                <p className="mt-2 text-2xl font-bold text-slate-900">{item.value}</p>
+                <p className="mt-2 text-xs text-slate-600">{item.detail}</p>
+              </Card>
+            ))}
+          </div>
+
+          <div className="grid gap-6 lg:grid-cols-[1.15fr_0.85fr]">
+            <Card className="relative overflow-hidden border-leaf-100 bg-white/95">
+              <div className="absolute -right-16 -top-16 h-40 w-40 rounded-full bg-leaf-100/60" />
+              <h3 className="text-xl font-semibold text-slate-900">Operational Outcomes</h3>
+              <p className="mt-2 text-sm text-slate-600">
+                Teams move from reactive firefighting to structured prevention with clearer signals and faster execution.
+              </p>
+
+              <div className="mt-6 space-y-4">
+                {impactOutcomes.map((item, index) => (
+                  <div key={item.title} className="rounded-xl border border-slate-200/80 bg-white p-4">
+                    <div className="flex items-center gap-2">
+                      <span className="chip">0{index + 1}</span>
+                      <h4 className="text-sm font-semibold text-slate-900">{item.title}</h4>
+                    </div>
+                    <p className="mt-2 text-sm text-slate-600">{item.text}</p>
+                  </div>
+                ))}
+              </div>
+            </Card>
+
+            <Card className="border-slate-200/90 bg-white/90">
+              <h3 className="text-xl font-semibold text-slate-900">Community Voices</h3>
+              <p className="mt-2 text-sm text-slate-600">
+                Feedback from teams coordinating daily environmental monitoring and response.
+              </p>
+
+              <div className="mt-5 space-y-3 text-sm text-slate-700">
+                {communityVoices.map((voice) => (
+                  <blockquote key={voice.by} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                    <p>“{voice.quote}”</p>
+                    <footer className="mt-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      {voice.by}
+                    </footer>
+                  </blockquote>
+                ))}
+              </div>
+            </Card>
+          </div>
         </div>
       </section>
 
