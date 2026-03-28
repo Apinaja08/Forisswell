@@ -7,6 +7,7 @@ import Badge from "../components/ui/Badge";
 import FeedbackMessage from "../components/ui/FeedbackMessage";
 import EmptyState from "../components/ui/EmptyState";
 import CoordinatePickerMap from "../components/ui/CoordinatePickerMap";
+import { useAuth } from "../hooks/useAuth";
 
 const statusTone = {
   PLANTED: "info",
@@ -68,6 +69,29 @@ const distanceKm = (from, toCoords) => {
   return 6371 * c;
 };
 
+const toDateInputValue = (value) => {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toISOString().slice(0, 10);
+};
+
+const getOwnerId = (tree) => {
+  const owner = tree?.owner;
+  if (!owner) return null;
+  if (typeof owner === "string") return owner;
+  if (typeof owner === "object") {
+    return owner._id || owner.id || owner.userId || owner.ownerId || null;
+  }
+  return null;
+};
+
+const getUserId = (user) => {
+  if (!user) return null;
+  if (typeof user === "string") return user;
+  return user._id || user.id || null;
+};
+
 const emptyCreateForm = {
   name: "",
   species: "",
@@ -80,6 +104,7 @@ const emptyCreateForm = {
 };
 
 function TreesPage() {
+  const { user } = useAuth();
   const [trees, setTrees] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -97,6 +122,12 @@ function TreesPage() {
   const [createLoading, setCreateLoading] = useState(false);
   const [createError, setCreateError] = useState("");
   const [showMapPicker, setShowMapPicker] = useState(false);
+  const [editTreeId, setEditTreeId] = useState("");
+  const [editForm, setEditForm] = useState(emptyCreateForm);
+  const [editLoading, setEditLoading] = useState(false);
+  const [editError, setEditError] = useState("");
+  const [editLocationLoading, setEditLocationLoading] = useState(false);
+  const [deleteLoadingId, setDeleteLoadingId] = useState("");
 
   const [refreshKey, setRefreshKey] = useState(0);
 
@@ -219,6 +250,36 @@ function TreesPage() {
     );
   };
 
+  const setEditFromCurrentLocation = () => {
+    if (!navigator.geolocation) {
+      setEditError("Geolocation is not supported in this browser");
+      return;
+    }
+    if (!window.isSecureContext) {
+      setEditError("Current location needs HTTPS or localhost. Open the app in a secure context and try again.");
+      return;
+    }
+
+    setEditLocationLoading(true);
+    setEditError("");
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setEditForm((prev) => ({
+          ...prev,
+          latitude: position.coords.latitude.toFixed(6),
+          longitude: position.coords.longitude.toFixed(6),
+        }));
+        setEditLocationLoading(false);
+      },
+      (geoError) => {
+        setEditError(getGeoErrorMessage(geoError));
+        setEditLocationLoading(false);
+      },
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+  };
+
   const handleCreateTree = async (e) => {
     e.preventDefault();
     setCreateError("");
@@ -290,6 +351,133 @@ function TreesPage() {
     setCreateError("");
   };
 
+  const canManageTree = (tree) => {
+    if (!tree) return false;
+    if (user?.role === "admin") return true;
+    if (scope === "my") return true;
+    const ownerId = getOwnerId(tree);
+    const currentUserId = getUserId(user);
+    if (!ownerId || !currentUserId) return false;
+    return String(ownerId) === String(currentUserId);
+  };
+
+  const startEdit = (tree) => {
+    const coords = Array.isArray(tree?.location?.coordinates) ? tree.location.coordinates : [];
+
+    setEditTreeId(tree?._id || "");
+    setEditForm({
+      name: tree?.name || "",
+      species: tree?.species || "",
+      plantedDate: toDateInputValue(tree?.plantedDate),
+      status: tree?.status || "PLANTED",
+      longitude: coords[0] !== undefined ? String(coords[0]) : "",
+      latitude: coords[1] !== undefined ? String(coords[1]) : "",
+      notes: tree?.notes || "",
+      imageUrl: tree?.imageUrl || "",
+    });
+    setEditError("");
+  };
+
+  const cancelEdit = () => {
+    setEditTreeId("");
+    setEditForm(emptyCreateForm);
+    setEditError("");
+  };
+
+  const handleUpdateTree = async (e) => {
+    e.preventDefault();
+    if (!editTreeId) return;
+
+    setEditError("");
+    setSuccess("");
+
+    const lon = toNumber(editForm.longitude);
+    const lat = toNumber(editForm.latitude);
+
+    if (lon === null || lat === null) {
+      setEditError("Please provide valid longitude and latitude values");
+      return;
+    }
+    if (lon < -180 || lon > 180 || lat < -90 || lat > 90) {
+      setEditError("Coordinates out of range: lon -180..180, lat -90..90");
+      return;
+    }
+    if (!editForm.species.trim()) {
+      setEditError("Species is required");
+      return;
+    }
+    if (!editForm.plantedDate) {
+      setEditError("Planted date is required");
+      return;
+    }
+
+    setEditLoading(true);
+
+    try {
+      const payload = {
+        name: editForm.name.trim() || undefined,
+        species: editForm.species.trim(),
+        plantedDate: editForm.plantedDate,
+        status: editForm.status,
+        imageUrl: editForm.imageUrl.trim() || undefined,
+        notes: editForm.notes.trim() || undefined,
+        location: {
+          type: "Point",
+          coordinates: [lon, lat],
+        },
+      };
+
+      const response = await api.put(`/trees/${editTreeId}`, payload);
+      const updated = response.data?.data?.tree;
+      const addressText =
+        updated?.location?.address?.formatted || formatCoords(updated?.location?.coordinates);
+
+      setSuccess(`Tree updated successfully. Location: ${addressText}`);
+      setEditTreeId("");
+      setEditForm(emptyCreateForm);
+      setRefreshKey((prev) => prev + 1);
+    } catch (err) {
+      const message =
+        err?.response?.data?.message ||
+        err?.response?.data?.error ||
+        "Failed to update tree record";
+      setEditError(message);
+    } finally {
+      setEditLoading(false);
+    }
+  };
+
+  const handleDeleteTree = async (tree) => {
+    const treeId = tree?._id;
+    if (!treeId) return;
+
+    const confirmDelete = window.confirm(
+      `Delete "${tree?.name || tree?.species || "this tree"}"? This action hides the record.`
+    );
+    if (!confirmDelete) return;
+
+    setDeleteLoadingId(treeId);
+    setSuccess("");
+    setError("");
+
+    try {
+      await api.delete(`/trees/${treeId}`);
+      setSuccess("Tree deleted successfully");
+      if (editTreeId === treeId) {
+        cancelEdit();
+      }
+      setRefreshKey((prev) => prev + 1);
+    } catch (err) {
+      const message =
+        err?.response?.data?.message ||
+        err?.response?.data?.error ||
+        "Failed to delete tree record";
+      setError(message);
+    } finally {
+      setDeleteLoadingId("");
+    }
+  };
+
   const scopeConfig = {
     all: { label: "All Trees", badge: "info" },
     my: { label: "My Trees", badge: "leaf" },
@@ -305,7 +493,7 @@ function TreesPage() {
       {success ? <FeedbackMessage tone="success">{success}</FeedbackMessage> : null}
       {error ? <FeedbackMessage tone="error">{error}</FeedbackMessage> : null}
 
-      <form className="grid gap-6 xl:grid-cols-[1.12fr_0.88fr]" onSubmit={handleCreateTree}>
+      <form className="grid gap-6 xl:grid-cols-[1.12fr_0.88fr]" onSubmit={handleCreateTree} noValidate>
         <Card className="space-y-4">
           <SectionHeader
             title="Add Tree Record"
@@ -460,11 +648,136 @@ function TreesPage() {
         </Card>
       </form>
 
+      {editTreeId ? (
+        <Card className="space-y-4 border-blue-100 bg-white">
+          <SectionHeader
+            title="Edit Tree Record"
+            subtitle="Update tree details and coordinates."
+            right={<Badge variant="info">Editing</Badge>}
+          />
+
+          <form className="space-y-4" onSubmit={handleUpdateTree} noValidate>
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+              <div>
+                <label className="label" htmlFor="edit-tree-name">Tree Name</label>
+                <input
+                  id="edit-tree-name"
+                  className="input"
+                  value={editForm.name}
+                  onChange={(e) => setEditForm((prev) => ({ ...prev, name: e.target.value }))}
+                />
+              </div>
+              <div>
+                <label className="label" htmlFor="edit-tree-species">Species *</label>
+                <input
+                  id="edit-tree-species"
+                  className="input"
+                  value={editForm.species}
+                  onChange={(e) => setEditForm((prev) => ({ ...prev, species: e.target.value }))}
+                  required
+                />
+              </div>
+              <div>
+                <label className="label" htmlFor="edit-tree-planted-date">Planted Date *</label>
+                <input
+                  id="edit-tree-planted-date"
+                  className="input"
+                  type="date"
+                  value={editForm.plantedDate}
+                  onChange={(e) => setEditForm((prev) => ({ ...prev, plantedDate: e.target.value }))}
+                  required
+                />
+              </div>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+              <div>
+                <label className="label" htmlFor="edit-tree-status">Status</label>
+                <select
+                  id="edit-tree-status"
+                  className="input"
+                  value={editForm.status}
+                  onChange={(e) => setEditForm((prev) => ({ ...prev, status: e.target.value }))}
+                >
+                  <option value="PLANTED">PLANTED</option>
+                  <option value="GROWING">GROWING</option>
+                  <option value="MATURE">MATURE</option>
+                  <option value="DEAD">DEAD</option>
+                </select>
+              </div>
+              <div>
+                <label className="label" htmlFor="edit-tree-image-url">Image URL</label>
+                <input
+                  id="edit-tree-image-url"
+                  className="input"
+                  type="url"
+                  value={editForm.imageUrl}
+                  onChange={(e) => setEditForm((prev) => ({ ...prev, imageUrl: e.target.value }))}
+                />
+              </div>
+              <div>
+                <label className="label" htmlFor="edit-tree-longitude">Longitude *</label>
+                <input
+                  id="edit-tree-longitude"
+                  className="input"
+                  type="number"
+                  step="0.000001"
+                  value={editForm.longitude}
+                  onChange={(e) => setEditForm((prev) => ({ ...prev, longitude: e.target.value }))}
+                  required
+                />
+              </div>
+              <div>
+                <label className="label" htmlFor="edit-tree-latitude">Latitude *</label>
+                <input
+                  id="edit-tree-latitude"
+                  className="input"
+                  type="number"
+                  step="0.000001"
+                  value={editForm.latitude}
+                  onChange={(e) => setEditForm((prev) => ({ ...prev, latitude: e.target.value }))}
+                  required
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="label" htmlFor="edit-tree-notes">Notes</label>
+              <textarea
+                id="edit-tree-notes"
+                className="input min-h-24"
+                value={editForm.notes}
+                onChange={(e) => setEditForm((prev) => ({ ...prev, notes: e.target.value }))}
+              />
+            </div>
+
+            {editError ? <FeedbackMessage tone="error">{editError}</FeedbackMessage> : null}
+
+            <div className="flex flex-wrap items-center gap-2">
+              <button type="button" className="btn-secondary" onClick={setEditFromCurrentLocation}>
+                {editLocationLoading ? "Detecting..." : "Use Current Location"}
+              </button>
+              <button type="button" className="btn-secondary" onClick={cancelEdit}>
+                Cancel
+              </button>
+              <button type="submit" className="btn-primary" disabled={editLoading}>
+                {editLoading ? "Updating..." : "Update Tree"}
+              </button>
+            </div>
+          </form>
+        </Card>
+      ) : null}
+
       <Card className="space-y-4">
         <SectionHeader
           title="Explore Trees"
           subtitle="Switch data scope and apply filters to quickly find tree records."
-          right={scope === "nearby" ? <Badge variant="warning">Radius {radiusKm} km</Badge> : null}
+          right={
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant={activeScope.badge}>{activeScope.label}</Badge>
+              {scope === "nearby" ? <Badge variant="warning">Radius {radiusKm} km</Badge> : null}
+            </div>
+          }
         />
 
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -579,6 +892,7 @@ function TreesPage() {
                     <th className="table-cell">Owner</th>
                     <th className="table-cell">Location</th>
                     <th className="table-cell">Distance</th>
+                    <th className="table-cell">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 bg-white">
@@ -595,6 +909,29 @@ function TreesPage() {
                       </td>
                       <td className="table-cell">
                         {tree._distanceKm !== null ? `${tree._distanceKm.toFixed(2)} km` : "-"}
+                      </td>
+                      <td className="table-cell">
+                        {canManageTree(tree) ? (
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              className="rounded-lg border border-slate-300 px-2.5 py-1 text-xs font-semibold text-slate-700 transition hover:bg-slate-100"
+                              onClick={() => startEdit(tree)}
+                            >
+                              Edit
+                            </button>
+                            <button
+                              type="button"
+                              className="rounded-lg border border-red-300 px-2.5 py-1 text-xs font-semibold text-red-600 transition hover:bg-red-50"
+                              onClick={() => handleDeleteTree(tree)}
+                              disabled={deleteLoadingId === tree._id}
+                            >
+                              {deleteLoadingId === tree._id ? "Deleting..." : "Delete"}
+                            </button>
+                          </div>
+                        ) : (
+                          <span className="text-xs text-slate-400">No access</span>
+                        )}
                       </td>
                     </tr>
                   ))}
@@ -619,6 +956,25 @@ function TreesPage() {
                   <p className="mt-1 text-sm text-slate-600">
                     Distance: {tree._distanceKm !== null ? `${tree._distanceKm.toFixed(2)} km` : "-"}
                   </p>
+                  {canManageTree(tree) ? (
+                    <div className="mt-3 flex items-center gap-2">
+                      <button
+                        type="button"
+                        className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-100"
+                        onClick={() => startEdit(tree)}
+                      >
+                        Edit
+                      </button>
+                      <button
+                        type="button"
+                        className="rounded-lg border border-red-300 px-3 py-1.5 text-xs font-semibold text-red-600 transition hover:bg-red-50"
+                        onClick={() => handleDeleteTree(tree)}
+                        disabled={deleteLoadingId === tree._id}
+                      >
+                        {deleteLoadingId === tree._id ? "Deleting..." : "Delete"}
+                      </button>
+                    </div>
+                  ) : null}
                 </div>
               ))}
             </div>
