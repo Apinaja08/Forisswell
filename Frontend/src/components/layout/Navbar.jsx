@@ -103,9 +103,7 @@ function Navbar() {
                   <a className="rounded-lg px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100 hover:text-slate-900" href="#features">
                     Features
                   </a>
-                  <a className="rounded-lg px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100 hover:text-slate-900" href="#roles">
-                    Roles
-                  </a>
+
                 </nav>
                 <Link to="/login" className="btn-ghost">
                   Login
