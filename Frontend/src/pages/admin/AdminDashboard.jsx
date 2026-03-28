@@ -101,29 +101,28 @@ function AdminDashboard() {
       {stats && (
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
           <StatCard
-            label="Total Alerts"
+            title="Total Alerts"
             value={stats.overview?.total || 0}
-            trend={null}
-            color="bg-blue"
+            helper="All alerts in system"
+            tone="blue"
           />
           <StatCard
-            label="Pending Alerts"
+            title="Pending Alerts"
             value={stats.overview?.pending || 0}
-            trend={null}
-            color="bg-red"
-            onClick={() => navigate("/admin/alerts?status=pending")}
+            helper="Waiting for assignment"
+            tone="red"
           />
           <StatCard
-            label="In Progress"
+            title="In Progress"
             value={stats.overview?.inProgress || 0}
-            trend={null}
-            color="bg-yellow"
+            helper="Being worked on"
+            tone="yellow"
           />
           <StatCard
-            label="Completed"
+            title="Completed"
             value={stats.overview?.completed || 0}
-            trend={null}
-            color="bg-green"
+            helper="Successfully finished"
+            tone="green"
           />
         </div>
       )}
