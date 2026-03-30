@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState } from "react";
 import { MapContainer, TileLayer, Polygon, useMap, useMapEvents } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
@@ -10,18 +10,10 @@ import Badge from "../components/ui/Badge";
 import FeedbackMessage from "../components/ui/FeedbackMessage";
 import EmptyState from "../components/ui/EmptyState";
 import {
-  LineChart,
-  Line,
-  BarChart,
-  Bar,
   PieChart,
   Pie,
   Cell,
-  XAxis,
-  YAxis,
-  CartesianGrid,
   Tooltip,
-  Legend,
   ResponsiveContainer
 } from "recharts";
 
@@ -236,6 +228,22 @@ const RiskAnalysisPage = () => {
   });
   const [showLoadingModal, setShowLoadingModal] = useState(false);
 
+  // Edit/Delete states
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editingRisk, setEditingRisk] = useState(null);
+  const [editForm, setEditForm] = useState({
+    name: "",
+    riskLevel: "",
+    riskScore: "",
+    notes: ""
+  });
+  const [deleteConfirm, setDeleteConfirm] = useState(null);
+  const [actionLoading, setActionLoading] = useState(false);
+
+  // Get user from localStorage
+  const user = JSON.parse(localStorage.getItem("user") || "{}");
+  const isAdmin = user?.role === "admin";
+
   // Fetch risk assessments
   const fetchRiskAssessments = async () => {
     setLoading(true);
@@ -266,6 +274,18 @@ const RiskAnalysisPage = () => {
     }
   };
 
+  // Fetch single risk by ID
+  const fetchRiskById = async (id) => {
+    try {
+      const response = await api.get(`/risk/${id}`);
+      if (response.data.success) {
+        setSelectedRisk(response.data.data);
+      }
+    } catch (err) {
+      setError(err.response?.data?.error || "Failed to fetch risk details");
+    }
+  };
+
   // Fetch statistics
   const fetchStats = async () => {
     try {
@@ -283,66 +303,69 @@ const RiskAnalysisPage = () => {
     fetchStats();
   }, [pagination.page, filters]);
 
-  // Simulate progress updates
-  const updateProgress = (step, progressValue) => {
-    setAnalysisCurrentStep(step);
-    setAnalysisProgress(progressValue);
-    
-    // Update step status based on progress
-    if (progressValue < 20) {
-      setAnalysisStepStatus({
-        satellite: progressValue > 5 ? "loading" : "pending",
-        deforestation: "pending",
-        historical: "pending",
-        encroachment: "pending",
-        settlements: "pending",
-        calculating: "pending"
+  // Handle edit risk
+  const handleEditRisk = (risk) => {
+    setEditingRisk(risk);
+    setEditForm({
+      name: risk.name,
+      riskLevel: risk.riskLevel,
+      riskScore: risk.riskScore,
+      notes: risk.actions?.[0]?.notes || ""
+    });
+    setShowEditModal(true);
+  };
+
+  // Handle update risk
+  const handleUpdateRisk = async () => {
+    setActionLoading(true);
+    try {
+      const response = await api.put(`/risk/update/${editingRisk._id}`, {
+        name: editForm.name,
+        riskLevel: editForm.riskLevel,
+        riskScore: parseInt(editForm.riskScore),
+        actions: editForm.notes ? [{
+          type: "manual_update",
+          status: "pending",
+          notes: editForm.notes,
+          triggeredAt: new Date()
+        }] : []
       });
-    } else if (progressValue < 40) {
-      setAnalysisStepStatus({
-        satellite: "complete",
-        deforestation: "loading",
-        historical: "pending",
-        encroachment: "pending",
-        settlements: "pending",
-        calculating: "pending"
-      });
-    } else if (progressValue < 60) {
-      setAnalysisStepStatus({
-        satellite: "complete",
-        deforestation: "complete",
-        historical: "loading",
-        encroachment: "pending",
-        settlements: "pending",
-        calculating: "pending"
-      });
-    } else if (progressValue < 75) {
-      setAnalysisStepStatus({
-        satellite: "complete",
-        deforestation: "complete",
-        historical: "complete",
-        encroachment: "loading",
-        settlements: "pending",
-        calculating: "pending"
-      });
-    } else if (progressValue < 90) {
-      setAnalysisStepStatus({
-        satellite: "complete",
-        deforestation: "complete",
-        historical: "complete",
-        encroachment: "complete",
-        settlements: "loading",
-        calculating: "pending"
-      });
-    } else {
-      setAnalysisStepStatus({
-        satellite: "complete",
-        deforestation: "complete",
-        historical: "complete",
-        encroachment: "complete",
-        settlements: "complete",
-        calculating: "loading"
-      });
+      
+      if (response.data.success) {
+        setShowEditModal(false);
+        setEditingRisk(null);
+        await fetchRiskAssessments();
+        await fetchStats();
+        if (selectedRisk?._id === editingRisk._id) {
+          await fetchRiskById(editingRisk._id);
+        }
+        setError("");
+      }
+    } catch (err) {
+      setError(err.response?.data?.error || "Failed to update risk assessment");
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  // Handle delete risk
+  const handleDeleteRisk = async (riskId) => {
+    setActionLoading(true);
+    try {
+      const response = await api.delete(`/risk/${riskId}`);
+      if (response.data.success) {
+        setDeleteConfirm(null);
+        if (selectedRisk?._id === riskId) {
+          setSelectedRisk(null);
+        }
+        await fetchRiskAssessments();
+        await fetchStats();
+        setError("");
+      }
+    } catch (err) {
+      setError(err.response?.data?.error || "Failed to delete risk assessment");
+    } finally {
+      setActionLoading(false);
     }
   };
 
@@ -410,6 +433,69 @@ const RiskAnalysisPage = () => {
     }
   };
 
+  // Simulate progress updates
+  const updateProgress = (step, progressValue) => {
+    setAnalysisCurrentStep(step);
+    setAnalysisProgress(progressValue);
+    
+    // Update step status based on progress
+    if (progressValue < 20) {
+      setAnalysisStepStatus({
+        satellite: progressValue > 5 ? "loading" : "pending",
+        deforestation: "pending",
+        historical: "pending",
+        encroachment: "pending",
+        settlements: "pending",
+        calculating: "pending"
+      });
+    } else if (progressValue < 40) {
+      setAnalysisStepStatus({
+        satellite: "complete",
+        deforestation: "loading",
+        historical: "pending",
+        encroachment: "pending",
+        settlements: "pending",
+        calculating: "pending"
+      });
+    } else if (progressValue < 60) {
+      setAnalysisStepStatus({
+        satellite: "complete",
+        deforestation: "complete",
+        historical: "loading",
+        encroachment: "pending",
+        settlements: "pending",
+        calculating: "pending"
+      });
+    } else if (progressValue < 75) {
+      setAnalysisStepStatus({
+        satellite: "complete",
+        deforestation: "complete",
+        historical: "complete",
+        encroachment: "loading",
+        settlements: "pending",
+        calculating: "pending"
+      });
+    } else if (progressValue < 90) {
+      setAnalysisStepStatus({
+        satellite: "complete",
+        deforestation: "complete",
+        historical: "complete",
+        encroachment: "complete",
+        settlements: "loading",
+        calculating: "pending"
+      });
+    } else {
+      setAnalysisStepStatus({
+        satellite: "complete",
+        deforestation: "complete",
+        historical: "complete",
+        encroachment: "complete",
+        settlements: "complete",
+        calculating: "loading"
+      });
+    }
+  };
+
   // Draw polygon on map
   const handleMapClick = (e) => {
     if (!analysisForm.drawing) return;
@@ -467,6 +553,376 @@ const RiskAnalysisPage = () => {
     color: COLORS[item._id]
   })) || [];
 
+  // Edit Risk Modal Component
+  const EditRiskModal = () => {
+    if (!showEditModal) return null;
+    
+    return (
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+        <div className="bg-white rounded-lg max-w-md w-full">
+          <div className="p-6 space-y-4">
+            <div className="flex justify-between items-center">
+              <h3 className="text-xl font-bold text-slate-900">Edit Risk Assessment</h3>
+              <button
+                onClick={() => setShowEditModal(false)}
+                className="text-gray-500 hover:text-gray-700 text-2xl"
+              >
+                ×
+              </button>
+            </div>
+            
+            <div>
+              <label className="label" htmlFor="edit-name">Area Name</label>
+              <input
+                id="edit-name"
+                className="input"
+                value={editForm.name}
+                onChange={(e) => setEditForm(prev => ({ ...prev, name: e.target.value }))}
+              />
+            </div>
+            
+            <div>
+              <label className="label" htmlFor="edit-risk-level">Risk Level</label>
+              <select
+                id="edit-risk-level"
+                className="input"
+                value={editForm.riskLevel}
+                onChange={(e) => setEditForm(prev => ({ ...prev, riskLevel: e.target.value }))}
+              >
+                <option value="critical">Critical</option>
+                <option value="high">High</option>
+                <option value="medium">Medium</option>
+                <option value="low">Low</option>
+              </select>
+            </div>
+            
+            <div>
+              <label className="label" htmlFor="edit-risk-score">Risk Score (0-100)</label>
+              <input
+                id="edit-risk-score"
+                type="number"
+                min="0"
+                max="100"
+                className="input"
+                value={editForm.riskScore}
+                onChange={(e) => setEditForm(prev => ({ ...prev, riskScore: e.target.value }))}
+              />
+            </div>
+            
+            <div>
+              <label className="label" htmlFor="edit-notes">Notes / Actions</label>
+              <textarea
+                id="edit-notes"
+                rows="3"
+                className="input"
+                value={editForm.notes}
+                onChange={(e) => setEditForm(prev => ({ ...prev, notes: e.target.value }))}
+                placeholder="Add notes about this risk assessment..."
+              />
+            </div>
+            
+            <div className="flex gap-3 pt-2">
+              <button
+                onClick={handleUpdateRisk}
+                disabled={actionLoading}
+                className="btn-primary flex-1"
+              >
+                {actionLoading ? "Updating..." : "Update"}
+              </button>
+              <button
+                onClick={() => setShowEditModal(false)}
+                className="btn-secondary flex-1"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // Delete Confirmation Modal Component
+  const DeleteConfirmModal = () => {
+    if (!deleteConfirm) return null;
+    
+    return (
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+        <div className="bg-white rounded-lg max-w-md w-full">
+          <div className="p-6 space-y-4">
+            <div className="text-center">
+              <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <span className="text-3xl text-red-600">⚠️</span>
+              </div>
+              <h3 className="text-xl font-bold text-slate-900 mb-2">Delete Risk Assessment</h3>
+              <p className="text-slate-600">
+                Are you sure you want to delete "{deleteConfirm.name}"? This action cannot be undone.
+              </p>
+            </div>
+            
+            <div className="flex gap-3 pt-4">
+              <button
+                onClick={() => handleDeleteRisk(deleteConfirm._id)}
+                disabled={actionLoading}
+                className="bg-red-500 text-white px-4 py-2 rounded-lg hover:bg-red-600 flex-1 disabled:opacity-50"
+              >
+                {actionLoading ? "Deleting..." : "Delete"}
+              </button>
+              <button
+                onClick={() => setDeleteConfirm(null)}
+                className="btn-secondary flex-1"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // Risk Details Modal Component
+  const RiskDetailsModal = () => {
+    if (!selectedRisk) return null;
+    
+    const riskConfig = getRiskConfig(selectedRisk.riskLevel);
+    
+    return (
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+        <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+          <div className="p-6 space-y-6">
+            {/* Header */}
+            <div className="flex justify-between items-start">
+              <div>
+                <h2 className="text-2xl font-bold text-slate-900">{selectedRisk.name}</h2>
+                <div className="mt-1 flex gap-2">
+                  <Badge variant={riskConfig.badge}>
+                    {selectedRisk.riskLevel.toUpperCase()} RISK
+                  </Badge>
+                  <Badge variant="secondary">
+                    Score: {selectedRisk.riskScore}
+                  </Badge>
+                </div>
+              </div>
+              <div className="flex gap-2">
+                {isAdmin && (
+                  <>
+                    <button
+                      onClick={() => {
+                        setSelectedRisk(null);
+                        handleEditRisk(selectedRisk);
+                      }}
+                      className="px-3 py-1 text-sm bg-blue-500 text-white rounded hover:bg-blue-600 transition"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      onClick={() => {
+                        setSelectedRisk(null);
+                        setDeleteConfirm(selectedRisk);
+                      }}
+                      className="px-3 py-1 text-sm bg-red-500 text-white rounded hover:bg-red-600 transition"
+                    >
+                      Delete
+                    </button>
+                  </>
+                )}
+                <button
+                  onClick={() => setSelectedRisk(null)}
+                  className="text-gray-500 hover:text-gray-700 text-2xl leading-none"
+                >
+                  ×
+                </button>
+              </div>
+            </div>
+
+            {/* Risk Factors and Satellite Data Grid */}
+            <div className="grid gap-6 lg:grid-cols-2">
+              {/* Risk Factors */}
+              <div>
+                <h3 className="text-lg font-semibold text-slate-900 mb-3">Risk Factors</h3>
+                <div className="space-y-3">
+                  <div>
+                    <div className="flex justify-between mb-1">
+                      <span>Tree Cover Loss</span>
+                      <span className="font-medium">{selectedRisk.factors?.treeCoverLoss || 0}%</span>
+                    </div>
+                    <div className="h-2 bg-slate-200 rounded-full overflow-hidden">
+                      <div 
+                        className="h-full bg-red-500 rounded-full transition-all" 
+                        style={{ width: `${selectedRisk.factors?.treeCoverLoss || 0}%` }} 
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <div className="flex justify-between mb-1">
+                      <span>Degradation Rate</span>
+                      <span className="font-medium">{selectedRisk.factors?.degradationRate || 0}%</span>
+                    </div>
+                    <div className="h-2 bg-slate-200 rounded-full overflow-hidden">
+                      <div 
+                        className="h-full bg-orange-500 rounded-full transition-all" 
+                        style={{ width: `${selectedRisk.factors?.degradationRate || 0}%` }} 
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <div className="flex justify-between mb-1">
+                      <span>Fire Risk</span>
+                      <span className="font-medium">{selectedRisk.factors?.fireRisk || 0}%</span>
+                    </div>
+                    <div className="h-2 bg-slate-200 rounded-full overflow-hidden">
+                      <div 
+                        className="h-full bg-yellow-500 rounded-full transition-all" 
+                        style={{ width: `${selectedRisk.factors?.fireRisk || 0}%` }} 
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <div className="flex justify-between mb-1">
+                      <span>Encroachment Risk</span>
+                      <span className="font-medium">{selectedRisk.factors?.encroachmentRisk || 0}%</span>
+                    </div>
+                    <div className="h-2 bg-slate-200 rounded-full overflow-hidden">
+                      <div 
+                        className="h-full bg-blue-500 rounded-full transition-all" 
+                        style={{ width: `${selectedRisk.factors?.encroachmentRisk || 0}%` }} 
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <div className="flex justify-between mb-1">
+                      <span>Illegal Logging Probability</span>
+                      <span className="font-medium">{selectedRisk.factors?.illegalLoggingProbability || 0}%</span>
+                    </div>
+                    <div className="h-2 bg-slate-200 rounded-full overflow-hidden">
+                      <div 
+                        className="h-full bg-purple-500 rounded-full transition-all" 
+                        style={{ width: `${selectedRisk.factors?.illegalLoggingProbability || 0}%` }} 
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Satellite Data */}
+              <div>
+                <h3 className="text-lg font-semibold text-slate-900 mb-3">Satellite Data</h3>
+                <div className="bg-slate-50 rounded-lg p-4 space-y-2">
+                  <div className="flex justify-between border-b pb-2">
+                    <span className="text-slate-600">Tree Cover Percentage</span>
+                    <span className="font-medium">{selectedRisk.satelliteData?.treeCoverPercentage || 0}%</span>
+                  </div>
+                  <div className="flex justify-between border-b pb-2">
+                    <span className="text-slate-600">Change Detected</span>
+                    <span className="font-medium">{selectedRisk.satelliteData?.changeDetected ? "Yes" : "No"}</span>
+                  </div>
+                  <div className="flex justify-between border-b pb-2">
+                    <span className="text-slate-600">Confidence</span>
+                    <span className="font-medium">{selectedRisk.satelliteData?.confidence || 0}%</span>
+                  </div>
+                  <div className="flex justify-between border-b pb-2">
+                    <span className="text-slate-600">Data Source</span>
+                    <span className="font-medium">{selectedRisk.satelliteData?.source || "Unknown"}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-600">Imagery Date</span>
+                    <span className="font-medium">
+                      {selectedRisk.satelliteData?.imageryDate 
+                        ? new Date(selectedRisk.satelliteData.imageryDate).toLocaleDateString() 
+                        : "Unknown"}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Historical Comparison */}
+                {selectedRisk.satelliteData?.historicalComparison && (
+                  <div className="mt-4">
+                    <h4 className="font-semibold text-slate-900 mb-2">Historical Comparison</h4>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="bg-slate-50 rounded-lg p-3 text-center">
+                        <div className="text-sm text-slate-600">5-Year Change</div>
+                        <div className={`text-lg font-bold ${selectedRisk.satelliteData.historicalComparison.fiveYearChange > 0 ? 'text-red-600' : 'text-green-600'}`}>
+                          {selectedRisk.satelliteData.historicalComparison.fiveYearChange > 0 ? '+' : ''}
+                          {selectedRisk.satelliteData.historicalComparison.fiveYearChange}%
+                        </div>
+                      </div>
+                      <div className="bg-slate-50 rounded-lg p-3 text-center">
+                        <div className="text-sm text-slate-600">10-Year Change</div>
+                        <div className={`text-lg font-bold ${selectedRisk.satelliteData.historicalComparison.tenYearChange > 0 ? 'text-red-600' : 'text-green-600'}`}>
+                          {selectedRisk.satelliteData.historicalComparison.tenYearChange > 0 ? '+' : ''}
+                          {selectedRisk.satelliteData.historicalComparison.tenYearChange}%
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Required Actions */}
+            {selectedRisk.actions?.length > 0 && (
+              <div>
+                <h3 className="text-lg font-semibold text-slate-900 mb-3">Required Actions</h3>
+                <div className="space-y-2">
+                  {selectedRisk.actions.map((action, idx) => (
+                    <div key={idx} className="flex items-start gap-3 p-3 bg-slate-50 rounded-lg">
+                      <div className="w-8 h-8 rounded-full bg-red-100 flex items-center justify-center">
+                        <span className="text-red-600">⚠️</span>
+                      </div>
+                      <div className="flex-1">
+                        <div className="font-semibold capitalize">{action.type}</div>
+                        <div className="text-sm text-slate-600">{action.notes}</div>
+                        <div className="text-xs text-slate-400 mt-1">
+                          Triggered: {new Date(action.triggeredAt).toLocaleString()}
+                        </div>
+                      </div>
+                      <Badge variant="warning">{action.status}</Badge>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Metadata */}
+            <div className="border-t pt-4">
+              <div className="grid gap-2 text-sm text-slate-600">
+                <div className="flex justify-between">
+                  <span>Region:</span>
+                  <span className="font-medium">{selectedRisk.metadata?.region || "Unknown"}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Analyzed:</span>
+                  <span className="font-medium">{new Date(selectedRisk.analysisDate).toLocaleString()}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Last Updated:</span>
+                  <span className="font-medium">{new Date(selectedRisk.updatedAt).toLocaleString()}</span>
+                </div>
+                {selectedRisk.metadata?.tags?.length > 0 && (
+                  <div className="flex justify-between">
+                    <span>Tags:</span>
+                    <div className="flex gap-1 flex-wrap">
+                      {selectedRisk.metadata.tags.map((tag, idx) => (
+                        <Badge key={idx} variant="secondary" size="sm">{tag}</Badge>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="flex gap-3">
+              <button onClick={() => setSelectedRisk(null)} className="btn-primary flex-1">
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="space-y-6">
       {/* Loading Modal */}
@@ -478,25 +934,36 @@ const RiskAnalysisPage = () => {
         />
       )}
 
+      {/* Edit Modal */}
+      <EditRiskModal />
+
+      {/* Delete Confirmation Modal */}
+      <DeleteConfirmModal />
+
+      {/* Risk Details Modal */}
+      <RiskDetailsModal />
+
       {/* Header */}
       <Card className="border-green-100 bg-gradient-to-r from-green-50 to-emerald-50">
         <SectionHeader
           title="Forest Risk Analysis Dashboard"
           subtitle="Monitor deforestation, fire risk, and encroachment in forest areas"
           right={
-            <button
-              onClick={() => {
-                setShowAnalysisModal(true);
-                setAnalysisResult(null);
-                clearPolygon();
-              }}
-              className="btn-primary flex items-center gap-2"
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-              </svg>
-              New Analysis
-            </button>
+            isAdmin && (
+              <button
+                onClick={() => {
+                  setShowAnalysisModal(true);
+                  setAnalysisResult(null);
+                  clearPolygon();
+                }}
+                className="btn-primary flex items-center gap-2"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+                New Analysis
+              </button>
+            )
           }
         />
       </Card>
@@ -723,7 +1190,7 @@ const RiskAnalysisPage = () => {
             return (
               <Card
                 key={risk._id}
-                className={`cursor-pointer transition hover:-translate-y-0.5 hover:shadow-card border-l-4 ${
+                className={`cursor-pointer transition hover:-translate-y-0.5 hover:shadow-card border-l-4 relative ${
                   risk.riskLevel === "critical" ? "border-l-red-500" :
                   risk.riskLevel === "high" ? "border-l-orange-500" :
                   risk.riskLevel === "medium" ? "border-l-yellow-500" :
@@ -774,6 +1241,36 @@ const RiskAnalysisPage = () => {
                   <div className="text-xs text-slate-400">
                     Analyzed: {new Date(risk.analysisDate).toLocaleDateString()}
                   </div>
+
+                  {/* Action Buttons */}
+                  {isAdmin && (
+                    <div className="absolute top-3 right-3 flex gap-1">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleEditRisk(risk);
+                        }}
+                        className="p-1 text-slate-400 hover:text-blue-600 transition"
+                        title="Edit"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                        </svg>
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setDeleteConfirm(risk);
+                        }}
+                        className="p-1 text-slate-400 hover:text-red-600 transition"
+                        title="Delete"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                      </button>
+                    </div>
+                  )}
                 </div>
               </Card>
             );
@@ -792,9 +1289,11 @@ const RiskAnalysisPage = () => {
           actionLabel="Start New Analysis"
           actionTo="#"
           onAction={() => {
-            setShowAnalysisModal(true);
-            setAnalysisResult(null);
-            clearPolygon();
+            if (isAdmin) {
+              setShowAnalysisModal(true);
+              setAnalysisResult(null);
+              clearPolygon();
+            }
           }}
         />
       )}
@@ -1053,139 +1552,6 @@ const RiskAnalysisPage = () => {
                   )}
                 </div>
               )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Risk Details Modal */}
-      {selectedRisk && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="p-6 space-y-6">
-              <div className="flex justify-between items-start">
-                <div>
-                  <h2 className="text-2xl font-bold text-slate-900">{selectedRisk.name}</h2>
-                  <div className="mt-1">
-                    <Badge variant={getRiskConfig(selectedRisk.riskLevel).badge}>
-                      {selectedRisk.riskLevel.toUpperCase()} RISK
-                    </Badge>
-                  </div>
-                </div>
-                <button
-                  onClick={() => setSelectedRisk(null)}
-                  className="text-gray-500 hover:text-gray-700 text-2xl"
-                >
-                  ×
-                </button>
-              </div>
-
-              <div className="grid gap-4 lg:grid-cols-2">
-                <div>
-                  <h3 className="text-lg font-semibold text-slate-900 mb-3">Risk Factors</h3>
-                  <div className="space-y-3">
-                    <div>
-                      <div className="flex justify-between mb-1">
-                        <span>Tree Cover Loss</span>
-                        <span className="font-medium">{selectedRisk.factors?.treeCoverLoss}%</span>
-                      </div>
-                      <div className="h-2 bg-slate-200 rounded-full overflow-hidden">
-                        <div className="h-full bg-red-500 rounded-full" style={{ width: `${selectedRisk.factors?.treeCoverLoss}%` }} />
-                      </div>
-                    </div>
-                    <div>
-                      <div className="flex justify-between mb-1">
-                        <span>Degradation Rate</span>
-                        <span className="font-medium">{selectedRisk.factors?.degradationRate}%</span>
-                      </div>
-                      <div className="h-2 bg-slate-200 rounded-full overflow-hidden">
-                        <div className="h-full bg-orange-500 rounded-full" style={{ width: `${selectedRisk.factors?.degradationRate}%` }} />
-                      </div>
-                    </div>
-                    <div>
-                      <div className="flex justify-between mb-1">
-                        <span>Fire Risk</span>
-                        <span className="font-medium">{selectedRisk.factors?.fireRisk}%</span>
-                      </div>
-                      <div className="h-2 bg-slate-200 rounded-full overflow-hidden">
-                        <div className="h-full bg-yellow-500 rounded-full" style={{ width: `${selectedRisk.factors?.fireRisk}%` }} />
-                      </div>
-                    </div>
-                    <div>
-                      <div className="flex justify-between mb-1">
-                        <span>Encroachment Risk</span>
-                        <span className="font-medium">{selectedRisk.factors?.encroachmentRisk}%</span>
-                      </div>
-                      <div className="h-2 bg-slate-200 rounded-full overflow-hidden">
-                        <div className="h-full bg-blue-500 rounded-full" style={{ width: `${selectedRisk.factors?.encroachmentRisk}%` }} />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div>
-                  <h3 className="text-lg font-semibold text-slate-900 mb-3">Satellite Data</h3>
-                  <div className="space-y-2">
-                    <div className="flex justify-between">
-                      <span>Tree Cover Percentage</span>
-                      <span className="font-medium">{selectedRisk.satelliteData?.treeCoverPercentage}%</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>Change Detected</span>
-                      <span className="font-medium">{selectedRisk.satelliteData?.changeDetected ? "Yes" : "No"}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>Confidence</span>
-                      <span className="font-medium">{selectedRisk.satelliteData?.confidence}%</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>Data Source</span>
-                      <span className="font-medium">{selectedRisk.satelliteData?.source}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>Imagery Date</span>
-                      <span className="font-medium">{new Date(selectedRisk.satelliteData?.imageryDate).toLocaleDateString()}</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {selectedRisk.actions?.length > 0 && (
-                <div>
-                  <h3 className="text-lg font-semibold text-slate-900 mb-3">Required Actions</h3>
-                  <div className="space-y-2">
-                    {selectedRisk.actions.map((action, idx) => (
-                      <div key={idx} className="flex items-start gap-3 p-3 bg-slate-50 rounded-lg">
-                        <div className="w-8 h-8 rounded-full bg-red-100 flex items-center justify-center">
-                          <span className="text-red-600">⚠️</span>
-                        </div>
-                        <div className="flex-1">
-                          <div className="font-semibold capitalize">{action.type}</div>
-                          <div className="text-sm text-slate-600">{action.notes}</div>
-                          <div className="text-xs text-slate-400 mt-1">
-                            Triggered: {new Date(action.triggeredAt).toLocaleString()}
-                          </div>
-                        </div>
-                        <Badge variant="warning">{action.status}</Badge>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              <div className="border-t pt-4">
-                <div className="grid gap-2 text-sm text-slate-600">
-                  <div>Region: {selectedRisk.metadata?.region || "Unknown"}</div>
-                  <div>Analyzed: {new Date(selectedRisk.analysisDate).toLocaleString()}</div>
-                  <div>Tags: {selectedRisk.metadata?.tags?.join(", ") || "None"}</div>
-                </div>
-              </div>
-
-              <div className="flex gap-3">
-                <button onClick={() => setSelectedRisk(null)} className="btn-primary flex-1">
-                  Close
-                </button>
-              </div>
             </div>
           </div>
         </div>
