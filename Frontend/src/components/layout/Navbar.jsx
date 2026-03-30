@@ -18,14 +18,27 @@ function Navbar() {
   const [open, setOpen] = useState(false);
 
   const authNav = useMemo(
-    () => [
-      { to: "/dashboard", label: "Dashboard" },
-      { to: "/trees", label: "Trees" },
-      { to: "/events", label: "Events" },
-      { to: "/alerts", label: "Alerts" },
-      { to: "/profile", label: "Profile" },
-    ],
-    []
+    () => {
+      const baseNav = [
+        { to: "/dashboard", label: "Dashboard" },
+        { to: "/trees", label: "Trees" },
+        { to: "/events", label: "Events" },
+        { to: "/profile", label: "Profile" },
+      ];
+
+      // Add Alerts for volunteers and admins
+      if (user?.role === "volunteer" || user?.role === "admin") {
+        baseNav.splice(3, 0, { to: "/alerts", label: "Alerts" });
+      }
+
+      // Add Admin Panel for admins (at start after dashboard)
+      if (user?.role === "admin") {
+        baseNav.splice(1, 0, { to: "/admin", label: "📊 Admin Panel" });
+      }
+
+      return baseNav;
+    },
+    [user?.role]
   );
 
   useEffect(() => {
@@ -103,9 +116,7 @@ function Navbar() {
                   <a className="rounded-lg px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100 hover:text-slate-900" href="#features">
                     Features
                   </a>
-                  <a className="rounded-lg px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100 hover:text-slate-900" href="#roles">
-                    Roles
-                  </a>
+
                 </nav>
                 <Link to="/login" className="btn-ghost">
                   Login

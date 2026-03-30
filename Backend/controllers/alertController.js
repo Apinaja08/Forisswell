@@ -295,9 +295,11 @@ exports.completeAlert = asyncHandler(async (req, res, next) => {
   profile.updateStatsAfterCompletion(completionTime);
   await profile.save();
 
+  // Calculate hours for response
+  const hours = completionTime / 60;
+
   // PWA Push Notifications disabled - user preference
   // Send completion notification
-  // const hours = completionTime / 60;
   // const completionPayload = pushNotificationService.createCompletionPayload(
   //   alert,
   //   hours
@@ -645,4 +647,205 @@ exports.getAlertsByRegion = asyncHandler(async (req, res) => {
     count: markers.length,
     data: { markers },
   });
+});
+
+/**
+ * @desc    Seed database with test data (Development only)
+ * @route   POST /api/alerts/seed
+ * @access  Private (Admin role)
+ */
+exports.seedTestData = asyncHandler(async (req, res) => {
+  if (process.env.NODE_ENV !== "development") {
+    throw new Error("Seeding is only allowed in development mode");
+  }
+
+  const User = require("../models/User");
+  const VolunteerProfile = require("../models/VolunteerProfile");
+  const Tree = require("../models/Tree");
+
+  try {
+    // Clear existing data
+    console.log("Clearing existing test data...");
+    await User.deleteMany({});
+    await VolunteerProfile.deleteMany({});
+    await Tree.deleteMany({});
+    await Alert.deleteMany({});
+
+    // Create admin user
+    const adminUser = await User.create({
+      fullName: "System Admin",
+      email: "admin@forisswell.com",
+      password: "admin123",
+      role: "admin",
+      isActive: true,
+    });
+
+    // Create volunteer users
+    const volunteersData = [
+      { name: "Priya Sharma", email: "priya.sharma@forisswell.com", phone: "+919876543001" },
+      { name: "Raj Kumar", email: "raj.kumar@forisswell.com", phone: "+919876543002" },
+      { name: "Anaya Gupta", email: "anaya.gupta@forisswell.com", phone: "+919876543003" },
+      { name: "Arjun Singh", email: "arjun.singh@forisswell.com", phone: "+919876543004" },
+      { name: "Meera Patel", email: "meera.patel@forisswell.com", phone: "+919876543005" },
+    ];
+
+    const volunteerUsers = [];
+    for (const volData of volunteersData) {
+      const user = await User.create({
+        fullName: volData.name,
+        email: volData.email,
+        password: "volunteer123",
+        role: "volunteer",
+        isActive: true,
+      });
+      volunteerUsers.push(user);
+    }
+
+    // Create volunteer profiles
+    const locations = [
+      { coords: [77.2, 28.5], city: "New Delhi", district: "Central Delhi" },
+      { coords: [77.3, 28.6], city: "New Delhi", district: "East Delhi" },
+      { coords: [77.1, 28.4], city: "New Delhi", district: "West Delhi" },
+      { coords: [77.0, 28.6], city: "New Delhi", district: "North Delhi" },
+      { coords: [77.3, 28.4], city: "New Delhi", district: "South Delhi" },
+    ];
+
+    const volunteers = [];
+    for (let i = 0; i < volunteerUsers.length; i++) {
+      const volunteer = await VolunteerProfile.create({
+        user: volunteerUsers[i]._id,
+        phone: volunteersData[i].phone,
+        skills: ["watering", "pruning", "mulching"],
+        location: {
+          type: "Point",
+          coordinates: locations[i].coords,
+          address: {
+            formatted: `${locations[i].district}, ${locations[i].city}`,
+            city: locations[i].city,
+            district: locations[i].district,
+            country: "India",
+          },
+        },
+        preferredRadius: 5,
+        emergencyContact: {
+          name: `Contact for ${volunteersData[i].name}`,
+          phone: `+919876543${1000 + i}`,
+          relationship: "Family",
+        },
+        status: "available",
+        isAvailable: true,
+        stats: {
+          totalAlerts: Math.floor(Math.random() * 20) + 5,
+          completedAlerts: Math.floor(Math.random() * 15) + 2,
+          acceptedAlerts: Math.floor(Math.random() * 18) + 3,
+          cancelledAlerts: Math.floor(Math.random() * 3),
+          totalHours: parseFloat((Math.random() * 100 + 20).toFixed(2)),
+          averageCompletionTime: parseFloat((Math.random() * 60 + 30).toFixed(1)),
+        },
+        isActive: true,
+      });
+      volunteers.push(volunteer);
+    }
+
+    // Create trees
+    const treeSpecies = ["Neem", "Mango", "Peepal", "Oak", "Cedar", "Pine", "Banyan", "Ashoka", "Eucalyptus"];
+    const trees = [];
+
+    for (let i = 0; i < 15; i++) {
+      const tree = await Tree.create({
+        name: `Tree ${i + 1}`,
+        species: treeSpecies[i % treeSpecies.length],
+        plantedDate: new Date(Date.now() - Math.random() * 365 * 24 * 60 * 60 * 1000),
+        status: ["PLANTED", "GROWING", "MATURE"][Math.floor(Math.random() * 3)],
+        location: {
+          type: "Point",
+          coordinates: [77.0 + Math.random() * 0.5, 28.4 + Math.random() * 0.4],
+          address: {
+            formatted: "New Delhi, India",
+            city: "New Delhi",
+            district: "Central Delhi",
+            country: "India",
+          },
+        },
+        owner: adminUser._id,
+        notes: `Sample tree for testing - Species: ${treeSpecies[i % treeSpecies.length]}`,
+        isActive: true,
+      });
+      trees.push(tree);
+    }
+
+    // Create alerts
+    const alertTypes = ["high_temperature", "heavy_rain", "strong_wind", "multiple_threats"];
+    const priorities = ["critical", "high", "medium", "low"];
+    const statuses = ["pending", "assigned", "in_progress", "completed", "cancelled"];
+
+    for (let i = 0; i < 25; i++) {
+      const status = statuses[Math.floor(Math.random() * statuses.length)];
+      const isAssigned = status !== "pending" && Math.random() > 0.3;
+      const volunteer = isAssigned ? volunteers[Math.floor(Math.random() * volunteers.length)] : null;
+
+      const completedAt = status === "completed" ? new Date(Date.now() - Math.random() * 7 * 24 * 60 * 60 * 1000) : null;
+      const acceptedAt = (status === "assigned" || status === "in_progress" || status === "completed") ? new Date(Date.now() - Math.random() * 3 * 24 * 60 * 60 * 1000) : null;
+      const startedAt = (status === "in_progress" || status === "completed") ? new Date(Date.now() - Math.random() * 2 * 24 * 60 * 60 * 1000) : null;
+
+      const alert = await Alert.create({
+        tree: trees[Math.floor(Math.random() * trees.length)]._id,
+        type: alertTypes[Math.floor(Math.random() * alertTypes.length)],
+        priority: priorities[Math.floor(Math.random() * priorities.length)],
+        status: status,
+        description: `Alert for tree maintenance - Issue detected requiring immediate attention. Area needs inspection and care.`,
+        weatherData: {
+          temperature: 35 + Math.random() * 10,
+          humidity: 40 + Math.random() * 40,
+          rainfall: Math.random() * 100,
+          windSpeed: 5 + Math.random() * 20,
+          conditions: ["Sunny", "Cloudy", "Rainy"][Math.floor(Math.random() * 3)],
+        },
+        thresholdViolations: [
+          {
+            type: "high_temperature",
+            threshold: "35°C",
+            actualValue: 38 + Math.random() * 5,
+            excessAmount: 3 + Math.random() * 5,
+          },
+        ],
+        location: {
+          type: "Point",
+          coordinates: [77.0 + Math.random() * 0.5, 28.4 + Math.random() * 0.4],
+          address: {
+            formatted: "New Delhi, India",
+            city: "New Delhi",
+            district: "Central Delhi",
+            country: "India",
+          },
+        },
+        assignedTo: volunteer ? volunteer._id : null,
+        actionRequired: ["water_tree", "provide_shade", "inspect_damage"],
+        acceptedAt: acceptedAt,
+        startedAt: startedAt,
+        completedAt: completedAt,
+        expiresAt: status === "assigned" ? new Date(Date.now() + 30 * 60 * 1000) : null,
+        volunteerNotes: status === "completed" ? "Task completed successfully. Tree watered and cleaned. All actions completed." : "",
+        photoUrls: [],
+        isActive: true,
+      });
+    }
+
+    res.json({
+      success: true,
+      message: "Test data seeded successfully!",
+      data: {
+        users: volunteerUsers.length + 1,
+        volunteers: volunteers.length,
+        trees: trees.length,
+        alerts: 25,
+      },
+    });
+  } catch (error) {
+    console.error("Seed error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error seeding database: " + error.message,
+    });
+  }
 });

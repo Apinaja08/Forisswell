@@ -116,20 +116,21 @@ exports.getAllTrees = asyncHandler(async (req, res) => {
 });
 
 // @route   GET /api/trees/nearby (PROTECTED)
-// @desc    Get nearby active trees around [lon,lat] point
+// @desc    Get trees near provided coordinates
 exports.getNearbyTrees = asyncHandler(async (req, res) => {
-  const lon = toNumber(req.query.lon);
-  const lat = toNumber(req.query.lat);
-  const radiusKm = toNumber(req.query.radiusKm ?? req.query.radius ?? 5);
+  const lon = Number(req.query.lon);
+  const lat = Number(req.query.lat);
+  const radiusKmRaw = Number(req.query.radiusKm);
+  const radiusKm = Number.isFinite(radiusKmRaw)
+    ? Math.min(50, Math.max(1, radiusKmRaw))
+    : 5;
 
-  if (lon === null || lat === null) {
-    throw createError(400, "Please provide valid query params: lon and lat");
+  if (!Number.isFinite(lon) || !Number.isFinite(lat)) {
+    throw createError(400, "Valid lon and lat query parameters are required");
   }
+
   if (lon < -180 || lon > 180 || lat < -90 || lat > 90) {
-    throw createError(400, "Coordinates out of range");
-  }
-  if (radiusKm === null || radiusKm <= 0 || radiusKm > 100) {
-    throw createError(400, "radiusKm must be between 0 and 100");
+    throw createError(400, "Coordinates out of range: lon -180..180, lat -90..90");
   }
 
   const filter = {
@@ -156,7 +157,7 @@ exports.getNearbyTrees = asyncHandler(async (req, res) => {
     success: true,
     message: "Nearby trees fetched successfully",
     count: trees.length,
-    data: { trees },
+    data: { trees, center: { lon, lat }, radiusKm },
   });
 });
 

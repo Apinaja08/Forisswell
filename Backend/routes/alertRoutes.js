@@ -22,6 +22,7 @@ router.post("/:id/cancel", authorize("volunteer", "admin"), alertController.canc
 router.get("/statistics", authorize("admin"), alertController.getAlertStatistics);
 router.get("/leaderboard", authorize("admin"), alertController.getVolunteerLeaderboard);
 router.get("/map", authorize("admin"), alertController.getAlertsByRegion);
+router.post("/seed", authorize("admin"), alertController.seedTestData);
 
 // View routes (all authenticated users)
 router.get("/tree/:treeId", alertController.getTreeAlerts);

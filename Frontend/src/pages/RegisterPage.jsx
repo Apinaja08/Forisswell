@@ -21,7 +21,9 @@ function RegisterPage() {
 
     try {
       await register(form);
-      navigate("/dashboard", { replace: true });
+      // Redirect volunteers to profile page, others to dashboard
+      const redirectPath = form.role === "volunteer" ? "/profile" : "/dashboard";
+      navigate(redirectPath, { replace: true });
     } catch (err) {
       setError(err.response?.data?.message || err.response?.data?.error || "Registration failed");
     }

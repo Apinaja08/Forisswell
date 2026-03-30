@@ -6,6 +6,8 @@ import Card from "../components/ui/Card";
 import Badge from "../components/ui/Badge";
 import FeedbackMessage from "../components/ui/FeedbackMessage";
 import EmptyState from "../components/ui/EmptyState";
+import CoordinatePickerMap from "../components/ui/CoordinatePickerMap";
+import { useAuth } from "../hooks/useAuth";
 
 const statusTone = {
   PLANTED: "info",
@@ -27,6 +29,29 @@ const formatCoords = (coords) => {
   return `Lat ${lat.toFixed(5)}, Lon ${lon.toFixed(5)}`;
 };
 
+const getGeoErrorMessage = (geoError) => {
+  const code = geoError?.code;
+  const rawMessage = geoError?.message;
+
+  if (!window.isSecureContext) {
+    return "Current location needs a secure context. Use HTTPS or open the app on localhost.";
+  }
+
+  if (code === 1) {
+    return "Location permission denied. Allow location access for this site in your browser settings and try again.";
+  }
+
+  if (code === 2) {
+    return "Your location is unavailable right now. Check device location services and retry.";
+  }
+
+  if (code === 3) {
+    return "Location request timed out. Please try again.";
+  }
+
+  return rawMessage || "Unable to get your location";
+};
+
 const distanceKm = (from, toCoords) => {
   if (!from || !Array.isArray(toCoords) || toCoords.length !== 2) return null;
 
@@ -44,6 +69,29 @@ const distanceKm = (from, toCoords) => {
   return 6371 * c;
 };
 
+const toDateInputValue = (value) => {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toISOString().slice(0, 10);
+};
+
+const getOwnerId = (tree) => {
+  const owner = tree?.owner;
+  if (!owner) return null;
+  if (typeof owner === "string") return owner;
+  if (typeof owner === "object") {
+    return owner._id || owner.id || owner.userId || owner.ownerId || null;
+  }
+  return null;
+};
+
+const getUserId = (user) => {
+  if (!user) return null;
+  if (typeof user === "string") return user;
+  return user._id || user.id || null;
+};
+
 const emptyCreateForm = {
   name: "",
   species: "",
@@ -56,6 +104,7 @@ const emptyCreateForm = {
 };
 
 function TreesPage() {
+  const { user } = useAuth();
   const [trees, setTrees] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -72,6 +121,13 @@ function TreesPage() {
   const [form, setForm] = useState(emptyCreateForm);
   const [createLoading, setCreateLoading] = useState(false);
   const [createError, setCreateError] = useState("");
+  const [showMapPicker, setShowMapPicker] = useState(false);
+  const [editTreeId, setEditTreeId] = useState("");
+  const [editForm, setEditForm] = useState(emptyCreateForm);
+  const [editLoading, setEditLoading] = useState(false);
+  const [editError, setEditError] = useState("");
+  const [editLocationLoading, setEditLocationLoading] = useState(false);
+  const [deleteLoadingId, setDeleteLoadingId] = useState("");
 
   const [refreshKey, setRefreshKey] = useState(0);
 
@@ -138,6 +194,10 @@ function TreesPage() {
       setError("Geolocation is not supported in this browser");
       return;
     }
+    if (!window.isSecureContext) {
+      setError("Current location needs HTTPS or localhost. Open the app in a secure context and try again.");
+      return;
+    }
 
     setLocationLoading(true);
     setError("");
@@ -153,7 +213,7 @@ function TreesPage() {
         setLocationLoading(false);
       },
       (geoError) => {
-        setError(geoError?.message || "Unable to get your location");
+        setError(getGeoErrorMessage(geoError));
         setLocationLoading(false);
       },
       { enableHighAccuracy: true, timeout: 10000 }
@@ -163,6 +223,10 @@ function TreesPage() {
   const setCreateFromCurrentLocation = () => {
     if (!navigator.geolocation) {
       setCreateError("Geolocation is not supported in this browser");
+      return;
+    }
+    if (!window.isSecureContext) {
+      setCreateError("Current location needs HTTPS or localhost. Open the app in a secure context and try again.");
       return;
     }
 
@@ -179,8 +243,38 @@ function TreesPage() {
         setLocationLoading(false);
       },
       (geoError) => {
-        setCreateError(geoError?.message || "Unable to get current location");
+        setCreateError(getGeoErrorMessage(geoError));
         setLocationLoading(false);
+      },
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+  };
+
+  const setEditFromCurrentLocation = () => {
+    if (!navigator.geolocation) {
+      setEditError("Geolocation is not supported in this browser");
+      return;
+    }
+    if (!window.isSecureContext) {
+      setEditError("Current location needs HTTPS or localhost. Open the app in a secure context and try again.");
+      return;
+    }
+
+    setEditLocationLoading(true);
+    setEditError("");
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setEditForm((prev) => ({
+          ...prev,
+          latitude: position.coords.latitude.toFixed(6),
+          longitude: position.coords.longitude.toFixed(6),
+        }));
+        setEditLocationLoading(false);
+      },
+      (geoError) => {
+        setEditError(getGeoErrorMessage(geoError));
+        setEditLocationLoading(false);
       },
       { enableHighAccuracy: true, timeout: 10000 }
     );
@@ -248,33 +342,164 @@ function TreesPage() {
     }
   };
 
+  const handleMapCoordinateSelect = ({ lat, lon }) => {
+    setForm((prev) => ({
+      ...prev,
+      latitude: lat.toFixed(6),
+      longitude: lon.toFixed(6),
+    }));
+    setCreateError("");
+  };
+
+  const canManageTree = (tree) => {
+    if (!tree) return false;
+    if (user?.role === "admin") return true;
+    if (scope === "my") return true;
+    const ownerId = getOwnerId(tree);
+    const currentUserId = getUserId(user);
+    if (!ownerId || !currentUserId) return false;
+    return String(ownerId) === String(currentUserId);
+  };
+
+  const startEdit = (tree) => {
+    const coords = Array.isArray(tree?.location?.coordinates) ? tree.location.coordinates : [];
+
+    setEditTreeId(tree?._id || "");
+    setEditForm({
+      name: tree?.name || "",
+      species: tree?.species || "",
+      plantedDate: toDateInputValue(tree?.plantedDate),
+      status: tree?.status || "PLANTED",
+      longitude: coords[0] !== undefined ? String(coords[0]) : "",
+      latitude: coords[1] !== undefined ? String(coords[1]) : "",
+      notes: tree?.notes || "",
+      imageUrl: tree?.imageUrl || "",
+    });
+    setEditError("");
+  };
+
+  const cancelEdit = () => {
+    setEditTreeId("");
+    setEditForm(emptyCreateForm);
+    setEditError("");
+  };
+
+  const handleUpdateTree = async (e) => {
+    e.preventDefault();
+    if (!editTreeId) return;
+
+    setEditError("");
+    setSuccess("");
+
+    const lon = toNumber(editForm.longitude);
+    const lat = toNumber(editForm.latitude);
+
+    if (lon === null || lat === null) {
+      setEditError("Please provide valid longitude and latitude values");
+      return;
+    }
+    if (lon < -180 || lon > 180 || lat < -90 || lat > 90) {
+      setEditError("Coordinates out of range: lon -180..180, lat -90..90");
+      return;
+    }
+    if (!editForm.species.trim()) {
+      setEditError("Species is required");
+      return;
+    }
+    if (!editForm.plantedDate) {
+      setEditError("Planted date is required");
+      return;
+    }
+
+    setEditLoading(true);
+
+    try {
+      const payload = {
+        name: editForm.name.trim() || undefined,
+        species: editForm.species.trim(),
+        plantedDate: editForm.plantedDate,
+        status: editForm.status,
+        imageUrl: editForm.imageUrl.trim() || undefined,
+        notes: editForm.notes.trim() || undefined,
+        location: {
+          type: "Point",
+          coordinates: [lon, lat],
+        },
+      };
+
+      const response = await api.put(`/trees/${editTreeId}`, payload);
+      const updated = response.data?.data?.tree;
+      const addressText =
+        updated?.location?.address?.formatted || formatCoords(updated?.location?.coordinates);
+
+      setSuccess(`Tree updated successfully. Location: ${addressText}`);
+      setEditTreeId("");
+      setEditForm(emptyCreateForm);
+      setRefreshKey((prev) => prev + 1);
+    } catch (err) {
+      const message =
+        err?.response?.data?.message ||
+        err?.response?.data?.error ||
+        "Failed to update tree record";
+      setEditError(message);
+    } finally {
+      setEditLoading(false);
+    }
+  };
+
+  const handleDeleteTree = async (tree) => {
+    const treeId = tree?._id;
+    if (!treeId) return;
+
+    const confirmDelete = window.confirm(
+      `Delete "${tree?.name || tree?.species || "this tree"}"? This action hides the record.`
+    );
+    if (!confirmDelete) return;
+
+    setDeleteLoadingId(treeId);
+    setSuccess("");
+    setError("");
+
+    try {
+      await api.delete(`/trees/${treeId}`);
+      setSuccess("Tree deleted successfully");
+      if (editTreeId === treeId) {
+        cancelEdit();
+      }
+      setRefreshKey((prev) => prev + 1);
+    } catch (err) {
+      const message =
+        err?.response?.data?.message ||
+        err?.response?.data?.error ||
+        "Failed to delete tree record";
+      setError(message);
+    } finally {
+      setDeleteLoadingId("");
+    }
+  };
+
+  const scopeConfig = {
+    all: { label: "All Trees", badge: "info" },
+    my: { label: "My Trees", badge: "leaf" },
+    nearby: { label: "Nearby Trees", badge: "warning" },
+  };
+  const activeScope = scopeConfig[scope] || scopeConfig.all;
+  const hasFormCoordinates = Boolean(form.latitude && form.longitude);
+
   return (
     <section className="space-y-6">
-      <Card className="border-leaf-100 bg-white/90">
-        <SectionHeader
-          title="Tree Inventory"
-          subtitle="Create coordinate-based tree records and explore nearby planted trees."
-          right={
-            <div className="flex items-center gap-2">
-              <Badge variant={scope === "nearby" ? "warning" : scope === "my" ? "leaf" : "info"}>
-                {scope === "nearby" ? "Nearby" : scope === "my" ? "My Trees" : "All Trees"}
-              </Badge>
-              <Badge variant="leaf">{trees.length} Records</Badge>
-            </div>
-          }
-        />
-      </Card>
+
 
       {success ? <FeedbackMessage tone="success">{success}</FeedbackMessage> : null}
       {error ? <FeedbackMessage tone="error">{error}</FeedbackMessage> : null}
 
-      <Card>
-        <h2 className="text-lg font-semibold text-slate-900">Add Tree Record</h2>
-        <p className="mt-1 text-sm text-slate-600">
-          Save a tree using precise coordinates. The backend will attach human-readable location data from Nominatim.
-        </p>
+      <form className="grid gap-6 xl:grid-cols-[1.12fr_0.88fr]" onSubmit={handleCreateTree} noValidate>
+        <Card className="space-y-4">
+          <SectionHeader
+            title="Add Tree Record"
+            subtitle="Provide basic details and care notes for a new tree entry."
+          />
 
-        <form className="mt-4 space-y-4" onSubmit={handleCreateTree}>
           <div className="grid gap-4 md:grid-cols-2">
             <div>
               <label className="label" htmlFor="tree-name">Tree Name (optional)</label>
@@ -338,7 +563,25 @@ function TreesPage() {
             </div>
           </div>
 
-          <div className="grid gap-4 md:grid-cols-2">
+          <div className="pb-4">
+            <label className="label" htmlFor="tree-notes">Notes (optional)</label>
+            <textarea
+              id="tree-notes"
+              className="input min-h-40"
+              placeholder="Add care or condition notes"
+              value={form.notes}
+              onChange={(e) => setForm((prev) => ({ ...prev, notes: e.target.value }))}
+            />
+          </div>
+        </Card>
+
+        <Card className="space-y-4">
+          <SectionHeader
+            title="Coordinates"
+            subtitle="Set tree position manually, from your location, or from map."
+          />
+
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-1">
             <div>
               <label className="label" htmlFor="tree-longitude">Longitude *</label>
               <input
@@ -367,15 +610,29 @@ function TreesPage() {
             </div>
           </div>
 
-          <div>
-            <label className="label" htmlFor="tree-notes">Notes (optional)</label>
-            <textarea
-              id="tree-notes"
-              className="input min-h-24"
-              placeholder="Add care or condition notes"
-              value={form.notes}
-              onChange={(e) => setForm((prev) => ({ ...prev, notes: e.target.value }))}
-            />
+          <div className="space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() => setShowMapPicker((prev) => !prev)}
+              >
+                {showMapPicker ? "Hide Map Picker" : "Select from Map"}
+              </button>
+              {hasFormCoordinates ? (
+                <Badge variant="info">Lat {form.latitude}, Lon {form.longitude}</Badge>
+              ) : (
+                <Badge variant="neutral">No coordinates selected yet</Badge>
+              )}
+            </div>
+
+            {showMapPicker ? (
+              <CoordinatePickerMap
+                latitude={form.latitude}
+                longitude={form.longitude}
+                onSelect={handleMapCoordinateSelect}
+              />
+            ) : null}
           </div>
 
           {createError ? <FeedbackMessage tone="error">{createError}</FeedbackMessage> : null}
@@ -388,10 +645,141 @@ function TreesPage() {
               {createLoading ? "Saving..." : "Save Tree"}
             </button>
           </div>
-        </form>
-      </Card>
+        </Card>
+      </form>
 
-      <Card>
+      {editTreeId ? (
+        <Card className="space-y-4 border-blue-100 bg-white">
+          <SectionHeader
+            title="Edit Tree Record"
+            subtitle="Update tree details and coordinates."
+            right={<Badge variant="info">Editing</Badge>}
+          />
+
+          <form className="space-y-4" onSubmit={handleUpdateTree} noValidate>
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+              <div>
+                <label className="label" htmlFor="edit-tree-name">Tree Name</label>
+                <input
+                  id="edit-tree-name"
+                  className="input"
+                  value={editForm.name}
+                  onChange={(e) => setEditForm((prev) => ({ ...prev, name: e.target.value }))}
+                />
+              </div>
+              <div>
+                <label className="label" htmlFor="edit-tree-species">Species *</label>
+                <input
+                  id="edit-tree-species"
+                  className="input"
+                  value={editForm.species}
+                  onChange={(e) => setEditForm((prev) => ({ ...prev, species: e.target.value }))}
+                  required
+                />
+              </div>
+              <div>
+                <label className="label" htmlFor="edit-tree-planted-date">Planted Date *</label>
+                <input
+                  id="edit-tree-planted-date"
+                  className="input"
+                  type="date"
+                  value={editForm.plantedDate}
+                  onChange={(e) => setEditForm((prev) => ({ ...prev, plantedDate: e.target.value }))}
+                  required
+                />
+              </div>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+              <div>
+                <label className="label" htmlFor="edit-tree-status">Status</label>
+                <select
+                  id="edit-tree-status"
+                  className="input"
+                  value={editForm.status}
+                  onChange={(e) => setEditForm((prev) => ({ ...prev, status: e.target.value }))}
+                >
+                  <option value="PLANTED">PLANTED</option>
+                  <option value="GROWING">GROWING</option>
+                  <option value="MATURE">MATURE</option>
+                  <option value="DEAD">DEAD</option>
+                </select>
+              </div>
+              <div>
+                <label className="label" htmlFor="edit-tree-image-url">Image URL</label>
+                <input
+                  id="edit-tree-image-url"
+                  className="input"
+                  type="url"
+                  value={editForm.imageUrl}
+                  onChange={(e) => setEditForm((prev) => ({ ...prev, imageUrl: e.target.value }))}
+                />
+              </div>
+              <div>
+                <label className="label" htmlFor="edit-tree-longitude">Longitude *</label>
+                <input
+                  id="edit-tree-longitude"
+                  className="input"
+                  type="number"
+                  step="0.000001"
+                  value={editForm.longitude}
+                  onChange={(e) => setEditForm((prev) => ({ ...prev, longitude: e.target.value }))}
+                  required
+                />
+              </div>
+              <div>
+                <label className="label" htmlFor="edit-tree-latitude">Latitude *</label>
+                <input
+                  id="edit-tree-latitude"
+                  className="input"
+                  type="number"
+                  step="0.000001"
+                  value={editForm.latitude}
+                  onChange={(e) => setEditForm((prev) => ({ ...prev, latitude: e.target.value }))}
+                  required
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="label" htmlFor="edit-tree-notes">Notes</label>
+              <textarea
+                id="edit-tree-notes"
+                className="input min-h-24"
+                value={editForm.notes}
+                onChange={(e) => setEditForm((prev) => ({ ...prev, notes: e.target.value }))}
+              />
+            </div>
+
+            {editError ? <FeedbackMessage tone="error">{editError}</FeedbackMessage> : null}
+
+            <div className="flex flex-wrap items-center gap-2">
+              <button type="button" className="btn-secondary" onClick={setEditFromCurrentLocation}>
+                {editLocationLoading ? "Detecting..." : "Use Current Location"}
+              </button>
+              <button type="button" className="btn-secondary" onClick={cancelEdit}>
+                Cancel
+              </button>
+              <button type="submit" className="btn-primary" disabled={editLoading}>
+                {editLoading ? "Updating..." : "Update Tree"}
+              </button>
+            </div>
+          </form>
+        </Card>
+      ) : null}
+
+      <Card className="space-y-4">
+        <SectionHeader
+          title="Explore Trees"
+          subtitle="Switch data scope and apply filters to quickly find tree records."
+          right={
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant={activeScope.badge}>{activeScope.label}</Badge>
+              {scope === "nearby" ? <Badge variant="warning">Radius {radiusKm} km</Badge> : null}
+            </div>
+          }
+        />
+
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <div>
             <label className="label">Data Scope</label>
@@ -464,15 +852,20 @@ function TreesPage() {
           </div>
         </div>
 
-        <div className="mt-4 flex flex-wrap items-center gap-2">
-          <button type="button" className="btn-secondary" onClick={detectUserLocation}>
-            {locationLoading ? "Detecting..." : "Detect My Location"}
-          </button>
-          {userLocation ? (
-            <Badge variant="info">Lat {userLocation.lat.toFixed(5)}, Lon {userLocation.lon.toFixed(5)}</Badge>
-          ) : (
-            <Badge variant="neutral">Location not set</Badge>
-          )}
+        <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <button type="button" className="btn-secondary" onClick={detectUserLocation}>
+              {locationLoading ? "Detecting..." : "Detect My Location"}
+            </button>
+            {userLocation ? (
+              <Badge variant="info">Lat {userLocation.lat.toFixed(5)}, Lon {userLocation.lon.toFixed(5)}</Badge>
+            ) : (
+              <Badge variant="neutral">Location not set</Badge>
+            )}
+          </div>
+          <p className="mt-2 text-xs text-slate-600">
+            Distance values are calculated from your detected location.
+          </p>
         </div>
       </Card>
 
@@ -480,8 +873,16 @@ function TreesPage() {
 
       {!loading && !error ? (
         treesWithDistance.length > 0 ? (
-          <>
-            <div className="table-wrap hidden md:block">
+          <Card className="overflow-hidden p-0">
+            <div className="flex flex-col gap-2 border-b border-slate-200 bg-slate-50/80 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h2 className="text-lg font-semibold text-slate-900">Tree Results</h2>
+                <p className="text-sm text-slate-600">Showing {treesWithDistance.length} matching records.</p>
+              </div>
+              <Badge variant="leaf">{treesWithDistance.length} Results</Badge>
+            </div>
+
+            <div className="hidden overflow-x-auto md:block">
               <table className="table-base">
                 <thead className="table-head">
                   <tr>
@@ -491,6 +892,7 @@ function TreesPage() {
                     <th className="table-cell">Owner</th>
                     <th className="table-cell">Location</th>
                     <th className="table-cell">Distance</th>
+                    <th className="table-cell">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 bg-white">
@@ -508,15 +910,38 @@ function TreesPage() {
                       <td className="table-cell">
                         {tree._distanceKm !== null ? `${tree._distanceKm.toFixed(2)} km` : "-"}
                       </td>
+                      <td className="table-cell">
+                        {canManageTree(tree) ? (
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              className="rounded-lg border border-slate-300 px-2.5 py-1 text-xs font-semibold text-slate-700 transition hover:bg-slate-100"
+                              onClick={() => startEdit(tree)}
+                            >
+                              Edit
+                            </button>
+                            <button
+                              type="button"
+                              className="rounded-lg border border-red-300 px-2.5 py-1 text-xs font-semibold text-red-600 transition hover:bg-red-50"
+                              onClick={() => handleDeleteTree(tree)}
+                              disabled={deleteLoadingId === tree._id}
+                            >
+                              {deleteLoadingId === tree._id ? "Deleting..." : "Delete"}
+                            </button>
+                          </div>
+                        ) : (
+                          <span className="text-xs text-slate-400">No access</span>
+                        )}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
 
-            <div className="grid gap-4 md:hidden">
+            <div className="grid gap-4 p-4 md:hidden">
               {treesWithDistance.map((tree) => (
-                <Card key={tree._id}>
+                <div key={tree._id} className="rounded-xl border border-slate-200 bg-white p-4">
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <h3 className="text-base font-semibold">{tree.name || "Unnamed Tree"}</h3>
@@ -531,10 +956,29 @@ function TreesPage() {
                   <p className="mt-1 text-sm text-slate-600">
                     Distance: {tree._distanceKm !== null ? `${tree._distanceKm.toFixed(2)} km` : "-"}
                   </p>
-                </Card>
+                  {canManageTree(tree) ? (
+                    <div className="mt-3 flex items-center gap-2">
+                      <button
+                        type="button"
+                        className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-100"
+                        onClick={() => startEdit(tree)}
+                      >
+                        Edit
+                      </button>
+                      <button
+                        type="button"
+                        className="rounded-lg border border-red-300 px-3 py-1.5 text-xs font-semibold text-red-600 transition hover:bg-red-50"
+                        onClick={() => handleDeleteTree(tree)}
+                        disabled={deleteLoadingId === tree._id}
+                      >
+                        {deleteLoadingId === tree._id ? "Deleting..." : "Delete"}
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
               ))}
             </div>
-          </>
+          </Card>
         ) : (
           <EmptyState
             title="No trees found"
