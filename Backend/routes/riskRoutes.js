@@ -18,6 +18,7 @@ router.use(protect);
 router.post('/analyze', validatePolygon,protect,isAdmin, riskController.analyzeRisk);
 router.get('/high', protect, riskController.getHighRisks);
 router.get('/stats', protect, riskController.getRiskStats);
+router.get('/', protect, riskController.getAllRisks);
 router.get('/:id', protect, riskController.getRiskById);
 router.put('/update/:id', protect, isAdmin, riskController.updateRisk);
 router.delete('/:id', protect, isAdmin, riskController.deleteRisk);
