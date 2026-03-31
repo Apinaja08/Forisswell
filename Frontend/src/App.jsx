@@ -86,14 +86,6 @@ function App() {
             }
           />
           <Route
-            path="/risk-analysis"
-            element={
-              <ProtectedRoute>
-                <RiskAnalysisPage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
             path="/profile/edit"
             element={
               <ProtectedRoute>
@@ -119,6 +111,16 @@ function App() {
               <ProtectedRoute requiredRole="admin">
                 <AdminLayout>
                   <AdminAlertsPage />
+                </AdminLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/risk-analysis"
+            element={
+              <ProtectedRoute requiredRole="admin">
+                <AdminLayout>
+                  <RiskAnalysisPage />
                 </AdminLayout>
               </ProtectedRoute>
             }

@@ -1183,100 +1183,106 @@ const RiskAnalysisPage = () => {
       )}
 
       {!loading && !error && riskAssessments.length > 0 && (
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {riskAssessments.map((risk) => {
-            const riskConfig = getRiskConfig(risk.riskLevel);
-            
-            return (
-              <Card
-                key={risk._id}
-                className={`cursor-pointer transition hover:-translate-y-0.5 hover:shadow-card border-l-4 relative ${
-                  risk.riskLevel === "critical" ? "border-l-red-500" :
-                  risk.riskLevel === "high" ? "border-l-orange-500" :
-                  risk.riskLevel === "medium" ? "border-l-yellow-500" :
-                  "border-l-green-500"
-                }`}
-                onClick={() => setSelectedRisk(risk)}
-              >
-                <div className="space-y-3">
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
-                      <h3 className="text-lg font-semibold text-slate-900">{risk.name}</h3>
-                      <div className="mt-1">
-                        <Badge variant={riskConfig.badge}>{riskConfig.label}</Badge>
-                      </div>
-                    </div>
-                    <div className="text-2xl font-bold" style={{ color: COLORS[risk.riskLevel] }}>
-                      {risk.riskScore}
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-2 text-sm">
-                    <div className="flex items-center gap-1">
-                      <span className="text-slate-500">🌳 Tree Cover:</span>
-                      <span className="font-medium">{risk.satelliteData?.treeCoverPercentage || 0}%</span>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <span className="text-slate-500">🔥 Fire Risk:</span>
-                      <span className="font-medium">{risk.factors?.fireRisk || 0}%</span>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <span className="text-slate-500">📉 Deforestation:</span>
-                      <span className="font-medium">{risk.factors?.treeCoverLoss || 0}%</span>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <span className="text-slate-500">🏠 Encroachment:</span>
-                      <span className="font-medium">{risk.factors?.encroachmentRisk || 0}%</span>
-                    </div>
-                  </div>
-
-                  {risk.actions?.length > 0 && (
-                    <div className="pt-2 border-t">
-                      <div className="flex items-center gap-1 text-xs text-slate-500">
-                        <span>⚠️ {risk.actions.length} action(s) required</span>
-                      </div>
-                    </div>
-                  )}
-
-                  <div className="text-xs text-slate-400">
-                    Analyzed: {new Date(risk.analysisDate).toLocaleDateString()}
-                  </div>
-
-                  {/* Action Buttons */}
-                  {isAdmin && (
-                    <div className="absolute top-3 right-3 flex gap-1">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleEditRisk(risk);
-                        }}
-                        className="p-1 text-slate-400 hover:text-blue-600 transition"
-                        title="Edit"
-                      >
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                        </svg>
-                      </button>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setDeleteConfirm(risk);
-                        }}
-                        className="p-1 text-slate-400 hover:text-red-600 transition"
-                        title="Delete"
-                      >
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                        </svg>
-                      </button>
-                    </div>
-                  )}
+  <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+    {riskAssessments.map((risk) => {
+      const riskConfig = getRiskConfig(risk.riskLevel);
+      
+      return (
+        <Card
+          key={risk._id}
+          className={`cursor-pointer transition hover:-translate-y-0.5 hover:shadow-card border-l-4 relative ${
+            risk.riskLevel === "critical" ? "border-l-red-500" :
+            risk.riskLevel === "high" ? "border-l-orange-500" :
+            risk.riskLevel === "medium" ? "border-l-yellow-500" :
+            "border-l-green-500"
+          }`}
+          onClick={() => setSelectedRisk(risk)}
+        >
+          <div className="space-y-3">
+            {/* Header with Title and Risk Score - Restructured to avoid overlap */}
+            <div className="flex items-start justify-between">
+              <div className="flex-1 min-w-0">
+                <h3 className="text-lg font-semibold text-slate-900 truncate pr-2">{risk.name}</h3>
+                <div className="mt-1">
+                  <Badge variant={riskConfig.badge}>{riskConfig.label}</Badge>
                 </div>
-              </Card>
-            );
-          })}
-        </div>
-      )}
+              </div>
+              <div className="flex items-center gap-2">
+                {/* Risk Score - Now clearly visible */}
+                <div className="text-2xl font-bold shrink-0" style={{ color: COLORS[risk.riskLevel] }}>
+                  {risk.riskScore}
+                </div>
+                {/* Action Buttons - Moved next to score */}
+                {isAdmin && (
+                  <div className="flex gap-1 shrink-0">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleEditRisk(risk);
+                      }}
+                      className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded transition"
+                      title="Edit"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                      </svg>
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setDeleteConfirm(risk);
+                      }}
+                      className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition"
+                      title="Delete"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                      </svg>
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Risk Factors Grid */}
+            <div className="grid grid-cols-2 gap-2 text-sm">
+              <div className="flex items-center gap-1">
+                <span className="text-slate-500">🌳 Tree Cover:</span>
+                <span className="font-medium">{risk.satelliteData?.treeCoverPercentage || 0}%</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <span className="text-slate-500">🔥 Fire Risk:</span>
+                <span className="font-medium">{risk.factors?.fireRisk || 0}%</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <span className="text-slate-500">📉 Deforestation:</span>
+                <span className="font-medium">{risk.factors?.treeCoverLoss || 0}%</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <span className="text-slate-500">🏠 Encroachment:</span>
+                <span className="font-medium">{risk.factors?.encroachmentRisk || 0}%</span>
+              </div>
+            </div>
+
+            {/* Actions Indicator */}
+            {risk.actions?.length > 0 && (
+              <div className="pt-2 border-t">
+                <div className="flex items-center gap-1 text-xs text-slate-500">
+                  <span>⚠️ {risk.actions.length} action(s) required</span>
+                </div>
+              </div>
+            )}
+
+            {/* Analysis Date */}
+            <div className="text-xs text-slate-400">
+              Analyzed: {new Date(risk.analysisDate).toLocaleDateString()}
+            </div>
+          </div>
+        </Card>
+      );
+    })}
+  </div>
+)}
 
       {!loading && !error && riskAssessments.length === 0 && (
         <EmptyState
