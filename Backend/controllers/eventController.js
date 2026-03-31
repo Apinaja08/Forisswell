@@ -23,6 +23,9 @@ const createEvent = async (req, res) => {
     const event = new Event(eventData);
     await event.save();
 
+    // Populate the createdBy field before sending response
+    await event.populate('createdBy', 'name email avatar');
+
     // Add to creator's calendar if they have calendar connected
     if (req.user.calendarConnected) {
       try {
@@ -31,7 +34,6 @@ const createEvent = async (req, res) => {
         await event.save();
       } catch (calendarError) {
         console.error('Calendar sync error:', calendarError);
-        // Continue even if calendar sync fails
       }
     }
 
@@ -272,7 +274,7 @@ const leaveEvent = async (req, res) => {
 
 // @desc    Get event participants
 // @route   GET /api/events/:id/participants
-// @access  Public
+// @access  Private (Admin or Event Creator only)
 const getEventParticipants = async (req, res) => {
   try {
     const event = await Event.findById(req.params.id)
@@ -282,6 +284,17 @@ const getEventParticipants = async (req, res) => {
       return res.status(404).json({
         success: false,
         error: 'Event not found'
+      });
+    }
+
+    // Check if user is admin or event creator
+    const isAdmin = req.user.role === 'admin';
+    const isCreator = event.createdBy.toString() === req.user.id;
+
+    if (!isAdmin && !isCreator) {
+      return res.status(403).json({
+        success: false,
+        error: 'You do not have permission to view participants list'
       });
     }
 
@@ -317,7 +330,7 @@ const getEventParticipants = async (req, res) => {
 
 // @desc    Update an event
 // @route   PUT /api/events/:id
-// @access  Private (Event creator only)
+// @access  Private (Admin or Event creator only)
 const updateEvent = async (req, res) => {
   try {
     const event = await Event.findById(req.params.id);
@@ -329,11 +342,14 @@ const updateEvent = async (req, res) => {
       });
     }
 
-    // Check if user is the creator
-    if (event.createdBy.toString() !== req.user.id) {
+    // Check if user is admin or the creator
+    const isAdmin = req.user.role === 'admin';
+    const isCreator = event.createdBy.toString() === req.user.id;
+
+    if (!isAdmin && !isCreator) {
       return res.status(403).json({
         success: false,
-        error: 'Not authorized to update this event'
+        error: 'Not authorized to update this event. Only event creators and admins can edit events.'
       });
     }
 
@@ -350,6 +366,9 @@ const updateEvent = async (req, res) => {
     });
 
     await event.save();
+
+    // Populate before sending response
+    await event.populate('createdBy', 'name email avatar');
 
     // Update calendar if needed
     if (req.user.calendarConnected && event.calendarEventId) {
@@ -375,7 +394,7 @@ const updateEvent = async (req, res) => {
 
 // @desc    Delete an event
 // @route   DELETE /api/events/:id
-// @access  Private (Event creator or admin)
+// @access  Private (Admin or Event creator only)
 const deleteEvent = async (req, res) => {
   try {
     const event = await Event.findById(req.params.id);
@@ -387,11 +406,14 @@ const deleteEvent = async (req, res) => {
       });
     }
 
-    // Check if user is creator or admin
-    if (event.createdBy.toString() !== req.user.id && req.user.role !== 'admin') {
+    // Check if user is admin or creator
+    const isAdmin = req.user.role === 'admin';
+    const isCreator = event.createdBy.toString() === req.user.id;
+
+    if (!isAdmin && !isCreator) {
       return res.status(403).json({
         success: false,
-        error: 'Not authorized to delete this event'
+        error: 'Not authorized to delete this event. Only event creators and admins can delete events.'
       });
     }
 
@@ -431,6 +453,8 @@ const deleteEvent = async (req, res) => {
 const getUserCreatedEvents = async (req, res) => {
   try {
     const events = await Event.find({ createdBy: req.user.id })
+      .populate('createdBy', 'name email avatar')
+      .populate('participants.user', 'name email avatar')
       .sort({ createdAt: -1 });
 
     res.json({
@@ -454,6 +478,7 @@ const getUserJoinedEvents = async (req, res) => {
       'participants.user': req.user.id
     })
     .populate('createdBy', 'name email avatar')
+    .populate('participants.user', 'name email avatar')
     .sort({ startDate: 1 });
 
     res.json({

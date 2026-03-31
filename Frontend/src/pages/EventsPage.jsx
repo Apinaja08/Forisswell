@@ -50,11 +50,10 @@ function EventsPage() {
   
   const [tagInput, setTagInput] = useState("");
   
-  // FIXED: Get user from localStorage with better error handling
+  // Get user from localStorage with better error handling
   const getCurrentUser = () => {
     try {
       const userStr = localStorage.getItem("user");
-      console.log("User from localStorage:", userStr); // Debug log
       if (!userStr) return null;
       const user = JSON.parse(userStr);
       // Check if user has id or _id
@@ -76,8 +75,6 @@ function EventsPage() {
   const user = getCurrentUser();
   const isAdmin = user?.role === "admin";
   const isLoggedIn = !!user;
-  
-  console.log("User state:", { user, isLoggedIn, isAdmin }); // Debug log
 
   const eventTypes = [
     { value: "", label: "All Types" },
@@ -156,7 +153,7 @@ function EventsPage() {
     setFormSuccess("");
   };
 
-  // FIXED: Allow any logged-in user to create events (not just admin)
+  // Allow any logged-in user to create events
   const handleCreateEvent = () => {
     if (!isLoggedIn) {
       setError("Please login to create events");
@@ -167,12 +164,17 @@ function EventsPage() {
     setShowFormModal(true);
   };
 
+  // FIXED: Handle edit event with proper creator check
   const handleEditEvent = (event) => {
     if (!isLoggedIn) {
       setError("Please login to edit events");
       return;
     }
-    const isCreator = event.createdBy?._id === user.id || event.createdBy === user.id;
+    
+    // Handle both populated and unpopulated createdBy
+    const creatorId = event.createdBy?._id || event.createdBy;
+    const isCreator = creatorId === user.id;
+    
     if (!isAdmin && !isCreator) {
       setError("You don't have permission to edit this event");
       return;
@@ -278,7 +280,7 @@ function EventsPage() {
         if (selectedEvent?._id === eventId) {
           await fetchEventDetails(eventId);
         }
-        setError(""); // Clear any errors
+        setError("");
       }
     } catch (err) {
       setError(err.response?.data?.error || "Failed to join event");
@@ -403,11 +405,15 @@ function EventsPage() {
     return participant?.status;
   };
 
-  // Check if user can edit/delete event
+  // FIXED: Check if user can edit/delete event
   const canManageEvent = (event) => {
     if (!isLoggedIn) return false;
     if (isAdmin) return true;
-    const isCreator = event.createdBy?._id === user.id || event.createdBy === user.id;
+    
+    // Handle both populated and unpopulated createdBy
+    const creatorId = event.createdBy?._id || event.createdBy;
+    const isCreator = creatorId === user.id;
+    
     return isCreator;
   };
 
@@ -415,7 +421,11 @@ function EventsPage() {
   const canViewParticipants = (event) => {
     if (!isLoggedIn) return false;
     if (isAdmin) return true;
-    const isCreator = event.createdBy?._id === user.id || event.createdBy === user.id;
+    
+    // Handle both populated and unpopulated createdBy
+    const creatorId = event.createdBy?._id || event.createdBy;
+    const isCreator = creatorId === user.id;
+    
     return isCreator;
   };
 
@@ -441,8 +451,6 @@ function EventsPage() {
     // Separate confirmed and waitlist participants
     const confirmedParticipants = selectedEvent.participants?.filter(p => p.status === 'confirmed') || [];
     const waitlistParticipants = selectedEvent.participants?.filter(p => p.status === 'waitlist') || [];
-
-    console.log("Event details modal - canViewParts:", canViewParts, "isAdmin:", isAdmin, "selectedEvent:", selectedEvent); // Debug log
 
     return (
       <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -614,7 +622,7 @@ function EventsPage() {
               </div>
             )}
 
-            {/* Action Buttons - FIXED: Properly check login state */}
+            {/* Action Buttons */}
             {isLoggedIn ? (
               <div className="flex gap-3 pt-4 border-t">
                 {!isJoined && canJoin && (
