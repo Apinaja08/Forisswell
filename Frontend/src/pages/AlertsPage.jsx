@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import api from "../services/api";
 import * as socketService from "../services/socketService";
 import { useAuth } from "../hooks/useAuth";
@@ -10,14 +11,30 @@ import FeedbackMessage from "../components/ui/FeedbackMessage";
 import EmptyState from "../components/ui/EmptyState";
 import AlertCard from "../components/ui/AlertCard";
 
+const isVolunteerProfileComplete = (profile) => {
+  if (!profile) return false;
+  return (
+    profile.phone &&
+    profile.skills &&
+    profile.skills.length > 0 &&
+    profile.location &&
+    profile.emergencyContact &&
+    profile.emergencyContact.name &&
+    profile.emergencyContact.phone
+  );
+};
+
 function AlertsPage() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [alerts, setAlerts] = useState([]);
   const [nearbyAlerts, setNearbyAlerts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [loadingAction, setLoadingAction] = useState({});
   const [activeTab, setActiveTab] = useState("my-alerts");
+  const [volunteerProfile, setVolunteerProfile] = useState(null);
+  const [checkingProfile, setCheckingProfile] = useState(true);
 
   // Fetch my alerts
   const fetchMyAlerts = async () => {
@@ -56,6 +73,28 @@ function AlertsPage() {
 
     loadAlerts();
   }, []);
+
+  // Check volunteer profile completeness
+  useEffect(() => {
+    const checkVolunteerProfile = async () => {
+      if (user?.role !== "volunteer") {
+        setCheckingProfile(false);
+        return;
+      }
+
+      try {
+        const response = await api.get("/volunteers/profile");
+        const profile = response.data.data?.profile;
+        setVolunteerProfile(profile);
+        setCheckingProfile(false);
+      } catch (err) {
+        console.error("Failed to check volunteer profile:", err);
+        setCheckingProfile(false);
+      }
+    };
+
+    checkVolunteerProfile();
+  }, [user?.role]);
 
   // Setup Socket.io listeners for real-time alerts
   useEffect(() => {
@@ -123,6 +162,8 @@ function AlertsPage() {
       // Refresh alerts
       await fetchMyAlerts();
       setError("");
+      // Switch to ongoing process tab
+      setActiveTab("ongoing");
     } catch (err) {
       const message = err.response?.data?.message || "Failed to accept alert";
       console.error(message, err);
@@ -186,6 +227,14 @@ function AlertsPage() {
 
   const displayAlerts = activeTab === "my-alerts" ? alerts : nearbyAlerts;
 
+  // Get ongoing alerts (assigned or in_progress)
+  const ongoingAlerts = alerts.filter(
+    (alert) => alert.status === "assigned" || alert.status === "in_progress"
+  );
+
+  // Get completed alerts
+  const completedAlerts = alerts.filter((alert) => alert.status === "completed");
+
   return (
     <section className="space-y-6">
       <Card className="border-leaf-100 bg-white/90">
@@ -195,6 +244,26 @@ function AlertsPage() {
           right={<Badge variant="warning">{alerts.length} My Alerts</Badge>}
         />
       </Card>
+
+      {/* Profile Completeness Check for Volunteers */}
+      {user?.role === "volunteer" && !checkingProfile && !isVolunteerProfileComplete(volunteerProfile) && (
+        <Card className="border-orange-200 bg-orange-50">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <h3 className="font-semibold text-orange-900">Complete Your Profile</h3>
+              <p className="mt-1 text-sm text-orange-700">
+                Your volunteer profile is incomplete. Complete your profile to accept and view alerts.
+              </p>
+            </div>
+            <button
+              onClick={() => navigate("/profile")}
+              className="btn-primary shrink-0"
+            >
+              Update Profile
+            </button>
+          </div>
+        </Card>
+      )}
 
       {/* Tab Navigation */}
       <div className="flex gap-2 border-b border-slate-200">
@@ -206,15 +275,37 @@ function AlertsPage() {
               : "text-slate-600 hover:text-slate-900"
           }`}
         >
-          📋 My Alerts ({alerts.length})
+          📋 My Alerts ({alerts.filter(a => a.status === "completed").length})
         </button>
         <button
-          onClick={() => setActiveTab("nearby")}
+          onClick={() => setActiveTab("ongoing")}
+          className={`px-4 py-2 font-medium transition ${
+            activeTab === "ongoing"
+              ? "border-b-2 border-orange-600 text-orange-600"
+              : "text-slate-600 hover:text-slate-900"
+          }`}
+        >
+          ⚡ Ongoing Process ({ongoingAlerts.length})
+        </button>
+        <button
+          onClick={() => {
+            // If volunteer with incomplete profile tries to access nearby alerts
+            if (user?.role === "volunteer" && !isVolunteerProfileComplete(volunteerProfile)) {
+              navigate("/profile");
+            } else {
+              setActiveTab("nearby");
+            }
+          }}
           className={`px-4 py-2 font-medium transition ${
             activeTab === "nearby"
               ? "border-b-2 border-blue-600 text-blue-600"
               : "text-slate-600 hover:text-slate-900"
           }`}
+          title={
+            user?.role === "volunteer" && !isVolunteerProfileComplete(volunteerProfile)
+              ? "Complete your profile first"
+              : "View nearby available alerts"
+          }
         >
           📍 Nearby Alerts ({nearbyAlerts.length})
         </button>
@@ -224,36 +315,59 @@ function AlertsPage() {
       {error ? <FeedbackMessage tone="error">{error}</FeedbackMessage> : null}
 
       {!loading && !error ? (
-        displayAlerts.length > 0 ? (
-          <div className="grid gap-4 lg:grid-cols-2">
-            {displayAlerts.map((alert) => (
-              <AlertCard
-                key={alert._id || alert.id}
-                alert={alert}
-                onAccept={() => handleAcceptAlert(alert._id || alert.id)}
-                onStart={() => handleStartAlert(alert._id || alert.id)}
-                onComplete={() => handleCompleteAlert(alert._id || alert.id)}
-                onCancel={() => handleCancelAlert(alert._id || alert.id)}
-                isLoading={loadingAction[alert._id || alert.id] || false}
-              />
-            ))}
-          </div>
-        ) : (
-          <EmptyState
-            title={
-              activeTab === "my-alerts"
-                ? "No assigned alerts"
-                : "No nearby alerts available"
+        (() => {
+          let displayAlerts = [];
+          let emptyTitle = "";
+          let emptyDescription = "";
+
+          if (activeTab === "my-alerts") {
+            displayAlerts = completedAlerts;
+            emptyTitle = "No completed alerts";
+            emptyDescription =
+              "Completed alerts will appear here with their results and contributions.";
+          } else if (activeTab === "ongoing") {
+            displayAlerts = ongoingAlerts;
+            emptyTitle = "No ongoing process";
+            emptyDescription =
+              "Accept an alert to start working on it. It will appear here as an active task.";
+          } else if (activeTab === "nearby") {
+            // Check if volunteer has incomplete profile
+            if (user?.role === "volunteer" && !isVolunteerProfileComplete(volunteerProfile)) {
+              displayAlerts = [];
+              emptyTitle = "Complete Your Profile First";
+              emptyDescription =
+                "Update your volunteer profile with skills, location, and emergency contact to view and accept nearby alerts.";
+            } else {
+              displayAlerts = nearbyAlerts;
+              emptyTitle = "No nearby alerts available";
+              emptyDescription =
+                "Move closer to trees or wait for new weather-based alerts in your area.";
             }
-            description={
-              activeTab === "my-alerts"
-                ? "When alerts are assigned to your account, they will appear here with priority and status details."
-                : "Move closer to trees or wait for new weather-based alerts in your area."
-            }
-            actionLabel="Go to Dashboard"
-            actionTo="/dashboard"
-          />
-        )
+          }
+
+          return displayAlerts.length > 0 ? (
+            <div className="grid gap-4 lg:grid-cols-2">
+              {displayAlerts.map((alert) => (
+                <AlertCard
+                  key={alert._id || alert.id}
+                  alert={alert}
+                  onAccept={() => handleAcceptAlert(alert._id || alert.id)}
+                  onStart={() => handleStartAlert(alert._id || alert.id)}
+                  onComplete={() => handleCompleteAlert(alert._id || alert.id)}
+                  onCancel={() => handleCancelAlert(alert._id || alert.id)}
+                  isLoading={loadingAction[alert._id || alert.id] || false}
+                />
+              ))}
+            </div>
+          ) : (
+            <EmptyState
+              title={emptyTitle}
+              description={emptyDescription}
+              actionLabel="Go to Dashboard"
+              actionTo="/dashboard"
+            />
+          );
+        })()
       ) : null}
     </section>
   );

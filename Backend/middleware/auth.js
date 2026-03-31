@@ -30,6 +30,20 @@ exports.protect = async (req, res, next) => {
     }
 
     const decoded = jwt.verify(token, jwtSecret);
+    
+    // Handle dev admin user from .env
+    if (decoded.id === "dev-admin-user") {
+      req.user = {
+        id: "dev-admin-user",
+        _id: "dev-admin-user",
+        fullName: "Admin User",
+        email: process.env.ADMIN_EMAIL,
+        role: "admin",
+        isActive: true,
+      };
+      return next();
+    }
+
     const user = await User.findById(decoded.id).select("-password");
 
     if (!user) {

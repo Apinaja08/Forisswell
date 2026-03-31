@@ -12,6 +12,26 @@ const createError = (statusCode, message) => {
   return err;
 };
 
+const toNumber = (value) => {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+};
+
+const normalizeCoordinates = (coordinates) => {
+  if (!Array.isArray(coordinates) || coordinates.length !== 2) return null;
+  const lon = toNumber(coordinates[0]);
+  const lat = toNumber(coordinates[1]);
+  if (lon === null || lat === null) return null;
+  return [lon, lat];
+};
+
+const buildFallbackAddress = (lon, lat) => ({
+  formatted: `Lat ${lat.toFixed(6)}, Lon ${lon.toFixed(6)}`,
+  city: undefined,
+  district: undefined,
+  country: undefined,
+});
+
 const canAccessTree = (user, tree) => {
   if (!user) return false;
   if (user.role === "admin") return true;
@@ -21,23 +41,20 @@ const canAccessTree = (user, tree) => {
 exports.createTree = asyncHandler(async (req, res) => {
   const treeData = { ...req.body, owner: req.user.id };
 
-  const coordinates = treeData?.location?.coordinates;
-  if (Array.isArray(coordinates) && coordinates.length === 2) {
-    const lon = Number(coordinates[0]);
-    const lat = Number(coordinates[1]);
+  const normalized = normalizeCoordinates(treeData?.location?.coordinates);
+  if (normalized) {
+    const [lon, lat] = normalized;
+    treeData.location = treeData.location || {};
+    treeData.location.coordinates = normalized;
 
-    if (Number.isFinite(lon) && Number.isFinite(lat)) {
-      console.log("[createTree] Reverse geocoding:", { lon, lat });
-      const address = await reverseGeocode(lon, lat);
-      if (address) {
-        treeData.location = treeData.location || {};
-        treeData.location.address = address;
-        console.log("[createTree] Address resolved:", address);
-      } else {
-        console.warn("[createTree] Reverse geocoding failed/empty; saving without address.");
-      }
+    console.log("[createTree] Reverse geocoding:", { lon, lat });
+    const address = await reverseGeocode(lon, lat);
+    if (address) {
+      treeData.location.address = address;
+      console.log("[createTree] Address resolved:", address);
     } else {
-      console.warn("[createTree] Invalid coordinates; skipping reverse geocoding:", coordinates);
+      treeData.location.address = buildFallbackAddress(lon, lat);
+      console.warn("[createTree] Reverse geocoding failed; fallback address saved.");
     }
   }
 
@@ -98,6 +115,52 @@ exports.getAllTrees = asyncHandler(async (req, res) => {
   });
 });
 
+// @route   GET /api/trees/nearby (PROTECTED)
+// @desc    Get trees near provided coordinates
+exports.getNearbyTrees = asyncHandler(async (req, res) => {
+  const lon = Number(req.query.lon);
+  const lat = Number(req.query.lat);
+  const radiusKmRaw = Number(req.query.radiusKm);
+  const radiusKm = Number.isFinite(radiusKmRaw)
+    ? Math.min(50, Math.max(1, radiusKmRaw))
+    : 5;
+
+  if (!Number.isFinite(lon) || !Number.isFinite(lat)) {
+    throw createError(400, "Valid lon and lat query parameters are required");
+  }
+
+  if (lon < -180 || lon > 180 || lat < -90 || lat > 90) {
+    throw createError(400, "Coordinates out of range: lon -180..180, lat -90..90");
+  }
+
+  const filter = {
+    isActive: true,
+    location: {
+      $near: {
+        $geometry: {
+          type: "Point",
+          coordinates: [lon, lat],
+        },
+        $maxDistance: radiusKm * 1000,
+      },
+    },
+  };
+
+  if (req.query.species) filter.species = req.query.species;
+  if (req.query.status) filter.status = req.query.status;
+
+  const trees = await Tree.find(filter)
+    .sort({ createdAt: -1 })
+    .populate("owner", "fullName role");
+
+  res.status(200).json({
+    success: true,
+    message: "Nearby trees fetched successfully",
+    count: trees.length,
+    data: { trees, center: { lon, lat }, radiusKm },
+  });
+});
+
 exports.getTree = asyncHandler(async (req, res) => {
   const tree = await Tree.findOne({ _id: req.params.id, isActive: true }).populate(
     "owner",
@@ -140,30 +203,28 @@ exports.updateTree = asyncHandler(async (req, res) => {
     updates?.location &&
     Object.prototype.hasOwnProperty.call(updates.location, "coordinates");
 
+  if (hasCoordinateUpdate) {
+    const normalizedIncoming = normalizeCoordinates(incomingCoordinates);
+    if (normalizedIncoming) {
+      updates.location.coordinates = normalizedIncoming;
+    }
+  }
+
   Object.assign(tree, updates);
 
   if (hasCoordinateUpdate) {
-    if (Array.isArray(incomingCoordinates) && incomingCoordinates.length === 2) {
-      const lon = Number(incomingCoordinates[0]);
-      const lat = Number(incomingCoordinates[1]);
+    const normalizedIncoming = normalizeCoordinates(incomingCoordinates);
+    if (normalizedIncoming) {
+      const [lon, lat] = normalizedIncoming;
 
-      if (Number.isFinite(lon) && Number.isFinite(lat)) {
-        console.log("[updateTree] Reverse geocoding:", { lon, lat });
-        const address = await reverseGeocode(lon, lat);
-        if (address) {
-          tree.location.address = address;
-          console.log("[updateTree] Address resolved:", address);
-        } else {
-          tree.location.address = undefined;
-          console.warn(
-            "[updateTree] Reverse geocoding failed/empty; clearing location.address."
-          );
-        }
+      console.log("[updateTree] Reverse geocoding:", { lon, lat });
+      const address = await reverseGeocode(lon, lat);
+      if (address) {
+        tree.location.address = address;
+        console.log("[updateTree] Address resolved:", address);
       } else {
-        console.warn(
-          "[updateTree] Invalid coordinates; skipping reverse geocoding:",
-          incomingCoordinates
-        );
+        tree.location.address = buildFallbackAddress(lon, lat);
+        console.warn("[updateTree] Reverse geocoding failed; fallback address saved.");
       }
     } else {
       console.warn(

@@ -20,7 +20,6 @@ const roleConfig = {
     actions: [
       { to: "/trees", label: "Manage Trees", description: "Create, filter, and update your tree records." },
       { to: "/events", label: "View Events", description: "Join awareness and care sessions." },
-      { to: "/alerts", label: "Review Alerts", description: "Track weather-triggered alert updates." },
     ],
   },
   volunteer: {

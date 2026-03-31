@@ -1,3 +1,6 @@
 /Backend/node_modules
 Backend/.env
 Backend/forriswell.json
+/Frontend/node_modules
+/Frontend/dist
+Backend/scripts/seedData.js

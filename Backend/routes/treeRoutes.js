@@ -5,6 +5,7 @@ const {
   createTree,
   getTrees,
   getAllTrees,
+  getNearbyTrees,
   getTree,
   updateTree,
   deleteTree
@@ -16,6 +17,7 @@ router.use(protect);
 
 router.route("/").get(getTrees).post(createTree);
 router.get("/all", getAllTrees);
+router.get("/nearby", getNearbyTrees);
 router.route("/:id").get(getTree).put(updateTree).delete(deleteTree);
 
 module.exports = router;
