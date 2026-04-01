@@ -237,10 +237,10 @@ function AdminVolunteersPage() {
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-xl font-bold">Volunteer Profile</h2>
               <button
-                className="text-slate-400 hover:text-slate-600"
+                className="btn-secondary text-sm"
                 onClick={() => setShowModal(false)}
               >
-                ✕
+                Close
               </button>
             </div>
 
