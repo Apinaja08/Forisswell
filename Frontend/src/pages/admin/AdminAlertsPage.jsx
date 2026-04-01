@@ -312,10 +312,10 @@ function AdminAlertsPage() {
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-xl font-bold">Alert Details</h2>
               <button
-                className="text-slate-400 hover:text-slate-600"
+                className="btn-secondary text-sm"
                 onClick={() => setShowModal(false)}
               >
-                ✕
+                Close
               </button>
             </div>
 
@@ -339,10 +339,10 @@ function AdminAlertsPage() {
               <div>
                 <p className="text-xs font-semibold text-slate-600 uppercase">Weather Data</p>
                 <div className="grid grid-cols-2 gap-2 mt-2 text-sm">
-                  <p>🌡️ Temp: {selectedAlert.weatherData?.temperature}°C</p>
-                  <p>💧 Humidity: {selectedAlert.weatherData?.humidity}%</p>
-                  <p>🌧️ Rain: {selectedAlert.weatherData?.rainfall}mm</p>
-                  <p>💨 Wind: {selectedAlert.weatherData?.windSpeed}km/h</p>
+                  <p>Temperature: {selectedAlert.weatherData?.temperature}°C</p>
+                  <p>Humidity: {selectedAlert.weatherData?.humidity}%</p>
+                  <p>Rainfall: {selectedAlert.weatherData?.rainfall}mm</p>
+                  <p>Wind: {selectedAlert.weatherData?.windSpeed}km/h</p>
                 </div>
               </div>
 

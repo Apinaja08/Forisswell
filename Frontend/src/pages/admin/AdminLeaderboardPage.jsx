@@ -3,7 +3,6 @@ import LoadingSpinner from "../../components/common/LoadingSpinner";
 import FeedbackMessage from "../../components/ui/FeedbackMessage";
 import Card from "../../components/ui/Card";
 import SectionHeader from "../../components/ui/SectionHeader";
-import Badge from "../../components/ui/Badge";
 
 function AdminLeaderboardPage() {
   const [leaderboard, setLeaderboard] = useState([]);
@@ -47,19 +46,6 @@ function AdminLeaderboardPage() {
       setLeaderboard([]);
     } finally {
       setLoading(false);
-    }
-  };
-
-  const getMedalIcon = (rank) => {
-    switch (rank) {
-      case 1:
-        return "🥇";
-      case 2:
-        return "🥈";
-      case 3:
-        return "🥉";
-      default:
-        return null;
     }
   };
 
@@ -122,9 +108,7 @@ function AdminLeaderboardPage() {
               >
                 <div className="flex items-center gap-4 flex-1">
                   <div className="w-10 h-10 flex items-center justify-center rounded-full bg-slate-200 font-bold text-lg">
-                    {getMedalIcon(index + 1) || (
-                      <span className="text-sm text-slate-600">#{index + 1}</span>
-                    )}
+                    <span className="text-sm text-slate-600">#{index + 1}</span>
                   </div>
 
                   <div className="flex-1">

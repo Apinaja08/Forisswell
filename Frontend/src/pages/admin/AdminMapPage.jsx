@@ -99,7 +99,6 @@ function AdminMapPage() {
       <Card>
         <div className="h-96 bg-gradient-to-br from-blue-50 to-slate-50 rounded-lg flex items-center justify-center border-2 border-dashed border-slate-200">
           <div className="text-center">
-            <p className="text-4xl mb-2">🗺️</p>
             <p className="font-semibold text-slate-900">Interactive Map</p>
             <p className="text-sm text-slate-600 mt-1">
               Install leaflet and react-leaflet to visualize alerts on map
@@ -125,7 +124,7 @@ function AdminMapPage() {
                   <div className="flex-1">
                     <p className="font-semibold text-slate-900">{marker.treeName || "Alert"}</p>
                     <p className="text-xs text-slate-600 mt-1">
-                      📍 {marker.coordinates[1]?.toFixed(4)}, {marker.coordinates[0]?.toFixed(4)}
+                      Coordinates: {marker.coordinates[1]?.toFixed(4)}, {marker.coordinates[0]?.toFixed(4)}
                     </p>
                     <p className="text-xs text-slate-600 mt-2">
                       Type: {marker.type?.replace(/_/g, " ")} | Priority:{" "}
@@ -173,19 +172,19 @@ function AdminMapPage() {
           <div>
             <p className="font-semibold">Priority Levels</p>
             <div className="mt-2 space-y-1">
-              <p>🔴 Critical</p>
-              <p>🟠 High</p>
-              <p>🟡 Medium</p>
-              <p>🟢 Low</p>
+              <p className="text-red-600">Critical</p>
+              <p className="text-orange-600">High</p>
+              <p className="text-yellow-600">Medium</p>
+              <p className="text-green-600">Low</p>
             </div>
           </div>
           <div>
             <p className="font-semibold">Status Markers</p>
             <div className="mt-2 space-y-1">
-              <p>⭕ Pending</p>
-              <p>▢ Assigned</p>
-              <p>◇ In Progress</p>
-              <p>✓ Completed</p>
+              <p>Pending</p>
+              <p>Assigned</p>
+              <p>In Progress</p>
+              <p>Completed</p>
             </div>
           </div>
         </div>

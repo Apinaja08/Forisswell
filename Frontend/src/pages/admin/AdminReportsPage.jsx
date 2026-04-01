@@ -96,7 +96,7 @@ function AdminReportsPage() {
       <div className="flex items-center justify-between">
         <SectionHeader title="Reports & Analytics" description="System-wide insights and trends" />
         <button className="btn-primary" onClick={handleExportCSV}>
-          📥 Export CSV
+          Export CSV
         </button>
       </div>
 

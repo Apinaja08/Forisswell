@@ -132,21 +132,18 @@ function AdminDashboard() {
       <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
         <Card className="cursor-pointer transition-all hover:shadow-lg hover:scale-105" onClick={() => navigate("/admin/alerts?status=pending")}>
           <div className="space-y-2">
-            <div className="text-2xl">⚠️</div>
             <h3 className="font-semibold">Review Pending Alerts</h3>
             <p className="text-sm text-slate-600">Manage unassigned alerts</p>
           </div>
         </Card>
         <Card className="cursor-pointer transition-all hover:shadow-lg hover:scale-105" onClick={() => navigate("/admin/volunteers")}>
           <div className="space-y-2">
-            <div className="text-2xl">👥</div>
             <h3 className="font-semibold">Manage Volunteers</h3>
             <p className="text-sm text-slate-600">View and manage volunteer profiles</p>
           </div>
         </Card>
         <Card className="cursor-pointer transition-all hover:shadow-lg hover:scale-105" onClick={() => navigate("/admin/leaderboard")}>
           <div className="space-y-2">
-            <div className="text-2xl">🏆</div>
             <h3 className="font-semibold">View Leaderboard</h3>
             <p className="text-sm text-slate-600">Top performing volunteers</p>
           </div>
@@ -192,7 +189,7 @@ function AdminDashboard() {
                   </div>
                   <div className="text-right">
                     <span className="inline-block px-2 py-1 text-xs font-semibold bg-green-100 text-green-700 rounded">
-                      ✓ Completed
+                      Completed
                     </span>
                     <p className="text-xs text-slate-600 mt-2">
                       {new Date(alert.completedAt).toLocaleDateString()}
