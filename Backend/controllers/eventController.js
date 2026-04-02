@@ -84,7 +84,7 @@ const getEvents = async (req, res) => {
 
     const events = await Event.find(query)
       .populate('createdBy', 'name email avatar')
-      .populate('participants.user', 'name email avatar')
+      .select('-participants')
       .sort({ startDate: 1 })
       .limit(limit * 1)
       .skip((page - 1) * limit);
@@ -115,8 +115,7 @@ const getEvents = async (req, res) => {
 const getEventById = async (req, res) => {
   try {
     const event = await Event.findById(req.params.id)
-      .populate('createdBy', 'name email avatar bio')
-      .populate('participants.user', 'name email avatar bio');
+      .populate('createdBy', 'name email avatar bio');
 
     if (!event) {
       return res.status(404).json({
@@ -272,13 +271,15 @@ const leaveEvent = async (req, res) => {
   }
 };
 
+// Update these specific functions in your eventController.js
+
 // @desc    Get event participants
 // @route   GET /api/events/:id/participants
 // @access  Private (Admin or Event Creator only)
 const getEventParticipants = async (req, res) => {
   try {
     const event = await Event.findById(req.params.id)
-      .populate('participants.user', 'name email avatar bio joinedAt');
+      .populate('participants.user', 'name email avatar bio');
 
     if (!event) {
       return res.status(404).json({
@@ -287,14 +288,14 @@ const getEventParticipants = async (req, res) => {
       });
     }
 
-    // Check if user is admin or event creator
+    // CRITICAL FIX: Check permissions
     const isAdmin = req.user.role === 'admin';
     const isCreator = event.createdBy.toString() === req.user.id;
 
     if (!isAdmin && !isCreator) {
       return res.status(403).json({
         success: false,
-        error: 'You do not have permission to view participants list'
+        error: 'Only event organizers and admins can view participants'
       });
     }
 
@@ -342,14 +343,14 @@ const updateEvent = async (req, res) => {
       });
     }
 
-    // Check if user is admin or the creator
+    // CRITICAL FIX: Check permissions
     const isAdmin = req.user.role === 'admin';
     const isCreator = event.createdBy.toString() === req.user.id;
 
     if (!isAdmin && !isCreator) {
       return res.status(403).json({
         success: false,
-        error: 'Not authorized to update this event. Only event creators and admins can edit events.'
+        error: 'Only event organizers and admins can update this event'
       });
     }
 
@@ -366,18 +367,7 @@ const updateEvent = async (req, res) => {
     });
 
     await event.save();
-
-    // Populate before sending response
     await event.populate('createdBy', 'name email avatar');
-
-    // Update calendar if needed
-    if (req.user.calendarConnected && event.calendarEventId) {
-      try {
-        await calendarService.updateGoogleCalendarEvent(event, req.user, event.calendarEventId);
-      } catch (calendarError) {
-        console.error('Calendar update error:', calendarError);
-      }
-    }
 
     res.json({
       success: true,
@@ -406,31 +396,15 @@ const deleteEvent = async (req, res) => {
       });
     }
 
-    // Check if user is admin or creator
+    // CRITICAL FIX: Check permissions
     const isAdmin = req.user.role === 'admin';
     const isCreator = event.createdBy.toString() === req.user.id;
 
     if (!isAdmin && !isCreator) {
       return res.status(403).json({
         success: false,
-        error: 'Not authorized to delete this event. Only event creators and admins can delete events.'
+        error: 'Only event organizers and admins can delete this event'
       });
-    }
-
-    // Remove from calendars of all participants
-    if (event.calendarEventId) {
-      const participants = await User.find({
-        '_id': { $in: event.participants.map(p => p.user) },
-        calendarConnected: true
-      });
-
-      for (const participant of participants) {
-        try {
-          await calendarService.removeFromGoogleCalendar(event.calendarEventId, participant);
-        } catch (error) {
-          console.error(`Failed to remove calendar for user ${participant._id}:`, error);
-        }
-      }
     }
 
     await event.deleteOne();

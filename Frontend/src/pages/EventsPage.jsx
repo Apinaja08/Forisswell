@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useAuth } from "../hooks/useAuth";
 import api from "../services/api";
 import LoadingSpinner from "../components/common/LoadingSpinner";
 import SectionHeader from "../components/ui/SectionHeader";
@@ -8,6 +9,8 @@ import FeedbackMessage from "../components/ui/FeedbackMessage";
 import EmptyState from "../components/ui/EmptyState";
 
 function EventsPage() {
+  const { user, isAuthenticated, token } = useAuth();
+  
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -21,8 +24,7 @@ function EventsPage() {
     limit: 6,
     page: 1
   });
-  
-  // Modal states
+
   const [selectedEvent, setSelectedEvent] = useState(null);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [showFormModal, setShowFormModal] = useState(false);
@@ -30,7 +32,7 @@ function EventsPage() {
   const [formLoading, setFormLoading] = useState(false);
   const [formError, setFormError] = useState("");
   const [formSuccess, setFormSuccess] = useState("");
-  
+
   const [formData, setFormData] = useState({
     title: "",
     description: "",
@@ -47,34 +49,8 @@ function EventsPage() {
     status: "upcoming",
     reminders: true
   });
-  
+
   const [tagInput, setTagInput] = useState("");
-  
-  // Get user from localStorage with better error handling
-  const getCurrentUser = () => {
-    try {
-      const userStr = localStorage.getItem("user");
-      if (!userStr) return null;
-      const user = JSON.parse(userStr);
-      // Check if user has id or _id
-      if (user && (user.id || user._id)) {
-        return {
-          id: user.id || user._id,
-          role: user.role,
-          name: user.name,
-          ...user
-        };
-      }
-      return null;
-    } catch (e) {
-      console.error("Error parsing user:", e);
-      return null;
-    }
-  };
-  
-  const user = getCurrentUser();
-  const isAdmin = user?.role === "admin";
-  const isLoggedIn = !!user;
 
   const eventTypes = [
     { value: "", label: "All Types" },
@@ -93,11 +69,80 @@ function EventsPage() {
     { value: "cancelled", label: "Cancelled" }
   ];
 
-  const fetchEvents = async () => {
-    setLoading(true);
-    setError("");
+  // ✅ FIX: Get user ID from _id since user object uses _id not id
+  const userId = user?._id || user?.id;
+  const isAdmin = user?.role === "admin";
+  const isLoggedIn = isAuthenticated;
 
+  // Helper function to normalize IDs
+  const normalizeId = (id) => {
+    if (!id) return null;
+    if (typeof id === "object") return id._id?.toString() ?? id.toString();
+    return id.toString();
+  };
+
+  // Check if user can manage event (edit/delete)
+  const canManageEvent = (event) => {
+    
+    if (!isLoggedIn || !userId) {
+      return false;
+    }
+    
+    if (isAdmin) {
+      return true;
+    }
+
+    const creatorId = normalizeId(event.createdBy);
+    const currentUserId = normalizeId(userId);
+    
+    return creatorId === currentUserId;
+  };
+
+  // Check if user can view participants
+  const canViewParticipants = (event) => {
+    if (!isLoggedIn || !userId) return false;
+    if (isAdmin) return true;
+
+    const creatorId = normalizeId(event.createdBy);
+    const currentUserId = normalizeId(userId);
+
+    return creatorId === currentUserId;
+  };
+
+  // Set up axios token when component mounts or token changes
+  useEffect(() => {
+    if (token) {
+      api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+    } else {
+      delete api.defaults.headers.common['Authorization'];
+    }
+  }, [token]);
+
+  const handleFormChange = (e) => {
+    const { name, value } = e.target;
+
+    if (name.includes(".")) {
+      const keys = name.split(".");
+      setFormData((prev) => {
+        const updated = { ...prev };
+        let obj = updated;
+        for (let i = 0; i < keys.length - 1; i++) {
+          obj[keys[i]] = { ...obj[keys[i]] };
+          obj = obj[keys[i]];
+        }
+        obj[keys[keys.length - 1]] = value;
+        return updated;
+      });
+    } else {
+      setFormData((prev) => ({ ...prev, [name]: value }));
+    }
+  };
+
+  const fetchEvents = async () => {
     try {
+      setLoading(true);
+      setError("");
+
       const params = {
         page,
         limit: 6,
@@ -106,27 +151,29 @@ function EventsPage() {
         ...(status && { status })
       };
 
-      const response = await api.get("/events", { params });
-      
-      if (response.data.success) {
-        setEvents(response.data.data || []);
-        if (response.data.pagination) {
-          setPagination(response.data.pagination);
-        }
-      } else {
-        setEvents(response.data.data || []);
-      }
+      const res = await api.get("/events", { params });
+      setEvents(res.data.data || []);
+      setPagination(res.data.pagination || { page: 1, pages: 1, total: 0 });
     } catch (err) {
-      setError(
-        err.response?.data?.error || 
-        err.response?.data?.message || 
-        "Failed to load events"
-      );
+      setError(err.response?.data?.error || "Failed to load events");
     } finally {
       setLoading(false);
     }
   };
 
+  const fetchEventDetails = async (eventId) => {
+    try {
+      const response = await api.get(`/events/${eventId}`);
+      if (response.data.success) {
+        setSelectedEvent(response.data.data);
+      }
+    } catch (err) {
+      console.error("Failed to fetch event details", err);
+      setError("Failed to load event details");
+    }
+  };
+
+  // Fetch events when dependencies change
   useEffect(() => {
     fetchEvents();
   }, [page, city, eventType, status]);
@@ -153,7 +200,6 @@ function EventsPage() {
     setFormSuccess("");
   };
 
-  // Allow any logged-in user to create events
   const handleCreateEvent = () => {
     if (!isLoggedIn) {
       setError("Please login to create events");
@@ -164,28 +210,21 @@ function EventsPage() {
     setShowFormModal(true);
   };
 
-  // FIXED: Handle edit event with proper creator check
   const handleEditEvent = (event) => {
-    if (!isLoggedIn) {
-      setError("Please login to edit events");
-      return;
-    }
-    
-    // Handle both populated and unpopulated createdBy
-    const creatorId = event.createdBy?._id || event.createdBy;
-    const isCreator = creatorId === user.id;
-    
-    if (!isAdmin && !isCreator) {
+    if (!canManageEvent(event)) {
       setError("You don't have permission to edit this event");
       return;
     }
-    
     setFormData({
       title: event.title || "",
       description: event.description || "",
       eventType: event.eventType || "workshop",
-      startDate: event.startDate ? new Date(event.startDate).toISOString().slice(0, 16) : "",
-      endDate: event.endDate ? new Date(event.endDate).toISOString().slice(0, 16) : "",
+      startDate: event.startDate
+        ? new Date(event.startDate).toISOString().slice(0, 16)
+        : "",
+      endDate: event.endDate
+        ? new Date(event.endDate).toISOString().slice(0, 16)
+        : "",
       location: {
         address: event.location?.address || "",
         city: event.location?.city || "",
@@ -203,57 +242,43 @@ function EventsPage() {
     setShowFormModal(true);
   };
 
-  const handleFormChange = (e) => {
-    const { name, value } = e.target;
-    if (name.includes(".")) {
-      const [parent, child] = name.split(".");
-      setFormData(prev => ({
-        ...prev,
-        [parent]: {
-          ...prev[parent],
-          [child]: value
-        }
-      }));
-    } else {
-      setFormData(prev => ({ ...prev, [name]: value }));
-    }
-  };
+  const handleDeleteEvent = async (eventId) => {
+    if (!window.confirm("Are you sure you want to delete this event?")) return;
 
-  const handleAddTag = () => {
-    if (tagInput && !formData.tags.includes(tagInput)) {
-      setFormData(prev => ({
-        ...prev,
-        tags: [...prev.tags, tagInput]
-      }));
-      setTagInput("");
+    try {
+      await api.delete(`/events/${eventId}`);
+      fetchEvents();
+      setShowDetailsModal(false);
+    } catch (err) {
+      setError(err.response?.data?.error || "Failed to delete event");
     }
-  };
-
-  const handleRemoveTag = (tagToRemove) => {
-    setFormData(prev => ({
-      ...prev,
-      tags: prev.tags.filter(tag => tag !== tagToRemove)
-    }));
   };
 
   const handleSubmitEvent = async (e) => {
     e.preventDefault();
-    setFormLoading(true);
-    setFormError("");
-    setFormSuccess("");
+
+    if (!formData.startDate || !formData.endDate) {
+      setFormError("Dates are required");
+      return;
+    }
+
+    if (new Date(formData.startDate) >= new Date(formData.endDate)) {
+      setFormError("End date must be after start date");
+      return;
+    }
 
     try {
-      if (new Date(formData.startDate) >= new Date(formData.endDate)) {
-        throw new Error("End date must be after start date");
-      }
+      setFormLoading(true);
+      setFormError("");
+      setFormSuccess("");
 
       const url = editingEvent ? `/events/${editingEvent._id}` : "/events";
       const method = editingEvent ? "put" : "post";
-      
-      const response = await api[method](url, formData);
-      
-      if (response.data.success) {
-        setFormSuccess(editingEvent ? "Event updated successfully!" : "Event created successfully!");
+
+      const res = await api[method](url, formData);
+
+      if (res.data.success) {
+        setFormSuccess("Event saved successfully!");
         setTimeout(() => {
           setShowFormModal(false);
           fetchEvents();
@@ -261,7 +286,7 @@ function EventsPage() {
         }, 1500);
       }
     } catch (err) {
-      setFormError(err.response?.data?.error || err.message || "Failed to save event");
+      setFormError(err.response?.data?.error || "Failed to save event");
     } finally {
       setFormLoading(false);
     }
@@ -272,16 +297,10 @@ function EventsPage() {
       setError("Please login to join events");
       return;
     }
-    
     try {
-      const response = await api.post(`/events/${eventId}/join`);
-      if (response.data.success) {
-        await fetchEvents();
-        if (selectedEvent?._id === eventId) {
-          await fetchEventDetails(eventId);
-        }
-        setError("");
-      }
+      await api.post(`/events/${eventId}/join`);
+      await fetchEvents();
+      if (selectedEvent?._id === eventId) await fetchEventDetails(eventId);
     } catch (err) {
       setError(err.response?.data?.error || "Failed to join event");
     }
@@ -292,56 +311,30 @@ function EventsPage() {
       setError("Please login to leave events");
       return;
     }
-    
     try {
-      const response = await api.post(`/events/${eventId}/leave`);
-      if (response.data.success) {
-        await fetchEvents();
-        if (selectedEvent?._id === eventId) {
-          await fetchEventDetails(eventId);
-        }
-      }
+      await api.post(`/events/${eventId}/leave`);
+      await fetchEvents();
+      if (selectedEvent?._id === eventId) await fetchEventDetails(eventId);
     } catch (err) {
       setError(err.response?.data?.error || "Failed to leave event");
     }
   };
 
-  const handleDeleteEvent = async (eventId) => {
-    if (!isLoggedIn) {
-      setError("Please login to delete events");
-      return;
-    }
-    
-    if (!window.confirm("Are you sure you want to delete this event? This action cannot be undone.")) {
-      return;
-    }
-
-    try {
-      const response = await api.delete(`/events/${eventId}`);
-      if (response.data.success) {
-        setShowDetailsModal(false);
-        await fetchEvents();
-      }
-    } catch (err) {
-      setError(err.response?.data?.error || "Failed to delete event");
-    }
+  const isUserJoined = (event) => {
+    if (!event?.participants || !userId) return false;
+    const currentUserId = normalizeId(userId);
+    return event.participants.some(
+      (p) => normalizeId(p.user) === currentUserId
+    );
   };
 
-  const fetchEventDetails = async (eventId) => {
-    try {
-      const response = await api.get(`/events/${eventId}`);
-      if (response.data.success) {
-        setSelectedEvent(response.data.data);
-      }
-    } catch (err) {
-      console.error("Failed to fetch event details", err);
-    }
-  };
-
-  const openEventDetails = async (event) => {
-    setSelectedEvent(event);
-    setShowDetailsModal(true);
-    await fetchEventDetails(event._id);
+  const getUserParticipantStatus = (event) => {
+    if (!event?.participants || !userId) return null;
+    const currentUserId = normalizeId(userId);
+    const participant = event.participants.find(
+      (p) => normalizeId(p.user) === currentUserId
+    );
+    return participant?.status ?? null;
   };
 
   const formatEventType = (type) => {
@@ -368,65 +361,12 @@ function EventsPage() {
   const formatDate = (dateString) => {
     if (!dateString) return "-";
     return new Date(dateString).toLocaleString(undefined, {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit"
     });
-  };
-
-  // FIXED: Check if user is joined in the event
-  const isUserJoined = (event) => {
-    if (!isLoggedIn || !event?.participants) return false;
-    
-    return event.participants.some(participant => {
-      // Check different possible structures
-      if (participant.user?._id) return participant.user._id === user.id;
-      if (participant.user === user.id) return true;
-      if (participant._id === user.id) return true;
-      if (participant.user?.id) return participant.user.id === user.id;
-      return false;
-    });
-  };
-
-  // Get user's participation status
-  const getUserParticipantStatus = (event) => {
-    if (!isLoggedIn || !event?.participants) return null;
-    
-    const participant = event.participants.find(participant => {
-      if (participant.user?._id) return participant.user._id === user.id;
-      if (participant.user === user.id) return true;
-      if (participant._id === user.id) return true;
-      if (participant.user?.id) return participant.user.id === user.id;
-      return false;
-    });
-    
-    return participant?.status;
-  };
-
-  // FIXED: Check if user can edit/delete event
-  const canManageEvent = (event) => {
-    if (!isLoggedIn) return false;
-    if (isAdmin) return true;
-    
-    // Handle both populated and unpopulated createdBy
-    const creatorId = event.createdBy?._id || event.createdBy;
-    const isCreator = creatorId === user.id;
-    
-    return isCreator;
-  };
-
-  // FIXED: Check if user can view participants list - Admin or Creator
-  const canViewParticipants = (event) => {
-    if (!isLoggedIn) return false;
-    if (isAdmin) return true;
-    
-    // Handle both populated and unpopulated createdBy
-    const creatorId = event.createdBy?._id || event.createdBy;
-    const isCreator = creatorId === user.id;
-    
-    return isCreator;
   };
 
   const handleResetFilters = () => {
@@ -436,21 +376,34 @@ function EventsPage() {
     setPage(1);
   };
 
-  // Modal Component for Event Details
+  const handleAddTag = () => {
+    if (tagInput && !formData.tags.includes(tagInput)) {
+      setFormData((prev) => ({ ...prev, tags: [...prev.tags, tagInput] }));
+      setTagInput("");
+    }
+  };
+
+  const handleRemoveTag = (tagToRemove) => {
+    setFormData((prev) => ({
+      ...prev,
+      tags: prev.tags.filter((tag) => tag !== tagToRemove)
+    }));
+  };
+
+  // Event Details Modal
   const EventDetailsModal = () => {
     if (!selectedEvent) return null;
-    
+
     const statusConfig = formatStatus(selectedEvent.status);
     const isJoined = isUserJoined(selectedEvent);
     const participantStatus = getUserParticipantStatus(selectedEvent);
     const isFull = selectedEvent.currentParticipants >= selectedEvent.maxParticipants;
-    const canJoin = !isJoined && !isFull && selectedEvent.status === 'upcoming';
+    const canJoin = !isJoined && !isFull && selectedEvent.status === "upcoming";
     const canManage = canManageEvent(selectedEvent);
     const canViewParts = canViewParticipants(selectedEvent);
-    
-    // Separate confirmed and waitlist participants
-    const confirmedParticipants = selectedEvent.participants?.filter(p => p.status === 'confirmed') || [];
-    const waitlistParticipants = selectedEvent.participants?.filter(p => p.status === 'waitlist') || [];
+
+    const confirmedParticipants = selectedEvent.participants?.filter((p) => p.status === "confirmed") || [];
+    const waitlistParticipants = selectedEvent.participants?.filter((p) => p.status === "waitlist") || [];
 
     return (
       <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -460,10 +413,16 @@ function EventsPage() {
             <div className="border-b pb-4">
               <div className="flex items-start justify-between">
                 <div className="flex-1">
-                  <h2 className="text-2xl font-bold text-slate-900">{selectedEvent.title}</h2>
+                  <h2 className="text-2xl font-bold text-slate-900">
+                    {selectedEvent.title}
+                  </h2>
                   <div className="mt-2 flex flex-wrap gap-2">
-                    <Badge variant={statusConfig.variant}>{statusConfig.label}</Badge>
-                    <Badge variant="secondary">{formatEventType(selectedEvent.eventType)}</Badge>
+                    <Badge variant={statusConfig.variant}>
+                      {statusConfig.label}
+                    </Badge>
+                    <Badge variant="secondary">
+                      {formatEventType(selectedEvent.eventType)}
+                    </Badge>
                     {isFull && <Badge variant="warning">Full</Badge>}
                   </div>
                 </div>
@@ -499,67 +458,84 @@ function EventsPage() {
 
             {/* Description */}
             <div>
-              <h3 className="text-lg font-semibold text-slate-900 mb-2">Description</h3>
-              <p className="text-slate-600 whitespace-pre-wrap">{selectedEvent.description}</p>
+              <h3 className="text-lg font-semibold text-slate-900 mb-2">
+                Description
+              </h3>
+              <p className="text-slate-600 whitespace-pre-wrap">
+                {selectedEvent.description}
+              </p>
             </div>
 
-            {/* Details Grid */}
+            {/* Details grid */}
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
                 <div className="flex items-center gap-2">
-                  <span className="font-semibold text-slate-800">📍 Location:</span>
+                  <span className="font-semibold text-slate-800">
+                    📍 Location:
+                  </span>
                   <span className="text-slate-600">
-                    {selectedEvent.location?.address ? `${selectedEvent.location.address}, ` : ""}
+                    {selectedEvent.location?.address
+                      ? `${selectedEvent.location.address}, `
+                      : ""}
                     {selectedEvent.location?.city || "Virtual"}
                   </span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="font-semibold text-slate-800">📅 Start Date:</span>
-                  <span className="text-slate-600">{formatDate(selectedEvent.startDate)}</span>
+                  <span className="font-semibold text-slate-800">
+                    📅 Start Date:
+                  </span>
+                  <span className="text-slate-600">
+                    {formatDate(selectedEvent.startDate)}
+                  </span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="font-semibold text-slate-800">⏰ End Date:</span>
-                  <span className="text-slate-600">{formatDate(selectedEvent.endDate)}</span>
+                  <span className="font-semibold text-slate-800">
+                    ⏰ End Date:
+                  </span>
+                  <span className="text-slate-600">
+                    {formatDate(selectedEvent.endDate)}
+                  </span>
                 </div>
               </div>
               <div className="space-y-2">
                 <div className="flex items-center gap-2">
-                  <span className="font-semibold text-slate-800">👥 Participants:</span>
+                  <span className="font-semibold text-slate-800">
+                    👥 Participants:
+                  </span>
                   <span className="text-slate-600">
-                    {selectedEvent.currentParticipants || 0} / {selectedEvent.maxParticipants || 0}
+                    {selectedEvent.currentParticipants || 0} /{" "}
+                    {selectedEvent.maxParticipants || 0}
                   </span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="font-semibold text-slate-800">👤 Organizer:</span>
-                  <span className="text-slate-600">{selectedEvent.createdBy?.name || "System"}</span>
+                  <span className="font-semibold text-slate-800">
+                    👤 Organizer:
+                  </span>
+                  <span className="text-slate-600">
+                    {selectedEvent.createdBy?.name || "System"}
+                  </span>
                 </div>
-                {selectedEvent.tags?.length > 0 && (
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="font-semibold text-slate-800">🏷️ Tags:</span>
-                    <div className="flex flex-wrap gap-1">
-                      {selectedEvent.tags.map(tag => (
-                        <Badge key={tag} variant="secondary" size="sm">{tag}</Badge>
-                      ))}
-                    </div>
-                  </div>
-                )}
               </div>
             </div>
 
-            {/* Participants List - Only visible to Admin or Event Creator */}
+            {/* Participant list — only admin or creator */}
             {canViewParts && selectedEvent.participants?.length > 0 && (
               <div>
                 <h3 className="text-lg font-semibold text-slate-900 mb-3">
                   Participants ({selectedEvent.participants.length})
                 </h3>
-                
-                {/* Confirmed Participants */}
+
                 {confirmedParticipants.length > 0 && (
                   <div className="mb-4">
-                    <h4 className="font-medium text-slate-800 mb-2">Confirmed ({confirmedParticipants.length})</h4>
+                    <h4 className="font-medium text-slate-800 mb-2">
+                      Confirmed ({confirmedParticipants.length})
+                    </h4>
                     <div className="space-y-2">
                       {confirmedParticipants.map((participant, index) => (
-                        <div key={index} className="flex items-center justify-between p-2 bg-green-50 rounded">
+                        <div
+                          key={index}
+                          className="flex items-center justify-between p-2 bg-green-50 rounded"
+                        >
                           <div className="flex items-center gap-2">
                             <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center">
                               <span className="text-green-600 text-sm font-semibold">
@@ -571,24 +547,33 @@ function EventsPage() {
                                 {participant.user?.name || "Anonymous"}
                               </p>
                               <p className="text-xs text-slate-500">
-                                Joined: {new Date(participant.joinedAt).toLocaleDateString()}
+                                Joined:{" "}
+                                {new Date(
+                                  participant.joinedAt
+                                ).toLocaleDateString()}
                               </p>
                             </div>
                           </div>
-                          <Badge variant="success" size="sm">Confirmed</Badge>
+                          <Badge variant="success" size="sm">
+                            Confirmed
+                          </Badge>
                         </div>
                       ))}
                     </div>
                   </div>
                 )}
-                
-                {/* Waitlist Participants */}
+
                 {waitlistParticipants.length > 0 && (
                   <div>
-                    <h4 className="font-medium text-slate-800 mb-2">Waitlist ({waitlistParticipants.length})</h4>
+                    <h4 className="font-medium text-slate-800 mb-2">
+                      Waitlist ({waitlistParticipants.length})
+                    </h4>
                     <div className="space-y-2">
                       {waitlistParticipants.map((participant, index) => (
-                        <div key={index} className="flex items-center justify-between p-2 bg-yellow-50 rounded">
+                        <div
+                          key={index}
+                          className="flex items-center justify-between p-2 bg-yellow-50 rounded"
+                        >
                           <div className="flex items-center gap-2">
                             <div className="w-8 h-8 bg-yellow-100 rounded-full flex items-center justify-center">
                               <span className="text-yellow-600 text-sm font-semibold">
@@ -600,11 +585,16 @@ function EventsPage() {
                                 {participant.user?.name || "Anonymous"}
                               </p>
                               <p className="text-xs text-slate-500">
-                                Joined: {new Date(participant.joinedAt).toLocaleDateString()}
+                                Joined:{" "}
+                                {new Date(
+                                  participant.joinedAt
+                                ).toLocaleDateString()}
                               </p>
                             </div>
                           </div>
-                          <Badge variant="warning" size="sm">Waitlist</Badge>
+                          <Badge variant="warning" size="sm">
+                            Waitlist
+                          </Badge>
                         </div>
                       ))}
                     </div>
@@ -613,7 +603,6 @@ function EventsPage() {
               </div>
             )}
 
-            {/* Message when user can't view participants */}
             {!canViewParts && selectedEvent.participants?.length > 0 && (
               <div className="bg-gray-50 p-4 rounded-lg text-center">
                 <p className="text-sm text-gray-600">
@@ -622,7 +611,7 @@ function EventsPage() {
               </div>
             )}
 
-            {/* Action Buttons */}
+            {/* Join / Leave actions */}
             {isLoggedIn ? (
               <div className="flex gap-3 pt-4 border-t">
                 {!isJoined && canJoin && (
@@ -633,7 +622,7 @@ function EventsPage() {
                     Join Event
                   </button>
                 )}
-                {isJoined && participantStatus === 'confirmed' && (
+                {isJoined && participantStatus === "confirmed" && (
                   <button
                     onClick={() => handleLeaveEvent(selectedEvent._id)}
                     className="btn-secondary flex-1"
@@ -641,10 +630,10 @@ function EventsPage() {
                     Leave Event
                   </button>
                 )}
-                {isJoined && participantStatus === 'waitlist' && (
+                {isJoined && participantStatus === "waitlist" && (
                   <div className="flex-1 text-center">
                     <Badge variant="warning" className="w-full">
-                      On Waitlist - {selectedEvent.currentParticipants}/{selectedEvent.maxParticipants} spots filled
+                      On Waitlist
                     </Badge>
                     <button
                       onClick={() => handleLeaveEvent(selectedEvent._id)}
@@ -654,17 +643,10 @@ function EventsPage() {
                     </button>
                   </div>
                 )}
-                {!isJoined && !canJoin && !isFull && selectedEvent.status !== 'upcoming' && (
-                  <div className="flex-1 text-center">
-                    <Badge variant="secondary" className="w-full">
-                      This event is {selectedEvent.status}
-                    </Badge>
-                  </div>
-                )}
                 {!isJoined && isFull && (
                   <div className="flex-1 text-center">
                     <Badge variant="warning" className="w-full">
-                      Event is Full - Join Waitlist
+                      Event is Full
                     </Badge>
                     <button
                       onClick={() => handleJoinEvent(selectedEvent._id)}
@@ -679,11 +661,11 @@ function EventsPage() {
               <div className="pt-4 border-t">
                 <div className="bg-blue-50 p-4 rounded-lg text-center">
                   <p className="text-sm text-blue-800 mb-2">
-                    Please login to join this event and participate in community activities.
+                    Please login to join this event
                   </p>
-                  <button 
+                  <button
                     className="btn-primary"
-                    onClick={() => window.location.href = '/login'}
+                    onClick={() => (window.location.href = "/login")}
                   >
                     Login to Join
                   </button>
@@ -696,7 +678,7 @@ function EventsPage() {
     );
   };
 
-  // Modal Component for Event Form (Create/Edit)
+  // Event Form Modal
   const EventFormModal = () => {
     return (
       <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -722,17 +704,20 @@ function EventsPage() {
                 {formError}
               </FeedbackMessage>
             )}
-
             {formSuccess && (
-              <FeedbackMessage tone="success" onDismiss={() => setFormSuccess("")}>
+              <FeedbackMessage
+                tone="success"
+                onDismiss={() => setFormSuccess("")}
+              >
                 {formSuccess}
               </FeedbackMessage>
             )}
 
             <form onSubmit={handleSubmitEvent} className="space-y-4">
-              {/* Title */}
               <div>
-                <label className="label" htmlFor="title">Event Title *</label>
+                <label className="label" htmlFor="title">
+                  Event Title *
+                </label>
                 <input
                   id="title"
                   name="title"
@@ -745,9 +730,10 @@ function EventsPage() {
                 />
               </div>
 
-              {/* Description */}
               <div>
-                <label className="label" htmlFor="description">Description *</label>
+                <label className="label" htmlFor="description">
+                  Description *
+                </label>
                 <textarea
                   id="description"
                   name="description"
@@ -760,10 +746,11 @@ function EventsPage() {
                 />
               </div>
 
-              {/* Event Type and Status */}
               <div className="grid gap-4 sm:grid-cols-2">
                 <div>
-                  <label className="label" htmlFor="eventType">Event Type *</label>
+                  <label className="label" htmlFor="eventType">
+                    Event Type *
+                  </label>
                   <select
                     id="eventType"
                     name="eventType"
@@ -772,15 +759,19 @@ function EventsPage() {
                     value={formData.eventType}
                     onChange={handleFormChange}
                   >
-                    {eventTypes.filter(t => t.value).map(type => (
-                      <option key={type.value} value={type.value}>
-                        {type.label}
-                      </option>
-                    ))}
+                    {eventTypes
+                      .filter((t) => t.value)
+                      .map((type) => (
+                        <option key={type.value} value={type.value}>
+                          {type.label}
+                        </option>
+                      ))}
                   </select>
                 </div>
                 <div>
-                  <label className="label" htmlFor="status">Status</label>
+                  <label className="label" htmlFor="status">
+                    Status
+                  </label>
                   <select
                     id="status"
                     name="status"
@@ -788,19 +779,22 @@ function EventsPage() {
                     value={formData.status}
                     onChange={handleFormChange}
                   >
-                    {statusOptions.filter(s => s.value).map(opt => (
-                      <option key={opt.value} value={opt.value}>
-                        {opt.label}
-                      </option>
-                    ))}
+                    {statusOptions
+                      .filter((s) => s.value)
+                      .map((opt) => (
+                        <option key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </option>
+                      ))}
                   </select>
                 </div>
               </div>
 
-              {/* Dates */}
               <div className="grid gap-4 sm:grid-cols-2">
                 <div>
-                  <label className="label" htmlFor="startDate">Start Date & Time *</label>
+                  <label className="label" htmlFor="startDate">
+                    Start Date & Time *
+                  </label>
                   <input
                     id="startDate"
                     name="startDate"
@@ -812,7 +806,9 @@ function EventsPage() {
                   />
                 </div>
                 <div>
-                  <label className="label" htmlFor="endDate">End Date & Time *</label>
+                  <label className="label" htmlFor="endDate">
+                    End Date & Time *
+                  </label>
                   <input
                     id="endDate"
                     name="endDate"
@@ -825,12 +821,13 @@ function EventsPage() {
                 </div>
               </div>
 
-              {/* Location */}
               <div className="space-y-3">
                 <h3 className="font-semibold text-slate-900">Location</h3>
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div>
-                    <label className="label" htmlFor="location.address">Address</label>
+                    <label className="label" htmlFor="location.address">
+                      Address
+                    </label>
                     <input
                       id="location.address"
                       name="location.address"
@@ -842,7 +839,9 @@ function EventsPage() {
                     />
                   </div>
                   <div>
-                    <label className="label" htmlFor="location.city">City *</label>
+                    <label className="label" htmlFor="location.city">
+                      City *
+                    </label>
                     <input
                       id="location.city"
                       name="location.city"
@@ -856,10 +855,11 @@ function EventsPage() {
                 </div>
               </div>
 
-              {/* Capacity */}
               <div className="grid gap-4 sm:grid-cols-2">
                 <div>
-                  <label className="label" htmlFor="maxParticipants">Maximum Participants</label>
+                  <label className="label" htmlFor="maxParticipants">
+                    Maximum Participants
+                  </label>
                   <input
                     id="maxParticipants"
                     name="maxParticipants"
@@ -875,17 +875,25 @@ function EventsPage() {
                     <input
                       type="checkbox"
                       checked={formData.reminders}
-                      onChange={(e) => setFormData(prev => ({ ...prev, reminders: e.target.checked }))}
+                      onChange={(e) =>
+                        setFormData((prev) => ({
+                          ...prev,
+                          reminders: e.target.checked
+                        }))
+                      }
                       className="rounded border-slate-300"
                     />
-                    <span className="text-sm text-slate-700">Send email reminders</span>
+                    <span className="text-sm text-slate-700">
+                      Send email reminders
+                    </span>
                   </label>
                 </div>
               </div>
 
-              {/* Tags */}
               <div>
-                <label className="label" htmlFor="tags">Tags</label>
+                <label className="label" htmlFor="tags">
+                  Tags
+                </label>
                 <div className="flex gap-2">
                   <input
                     id="tags"
@@ -893,17 +901,26 @@ function EventsPage() {
                     className="input flex-1"
                     value={tagInput}
                     onChange={(e) => setTagInput(e.target.value)}
-                    onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddTag())}
+                    onKeyPress={(e) =>
+                      e.key === "Enter" && (e.preventDefault(), handleAddTag())
+                    }
                     placeholder="e.g., outdoor, family-friendly"
                   />
-                  <button type="button" onClick={handleAddTag} className="btn-secondary">
+                  <button
+                    type="button"
+                    onClick={handleAddTag}
+                    className="btn-secondary"
+                  >
                     Add
                   </button>
                 </div>
                 {formData.tags.length > 0 && (
                   <div className="mt-2 flex flex-wrap gap-2">
-                    {formData.tags.map(tag => (
-                      <span key={tag} className="inline-flex items-center gap-1 px-2 py-1 bg-slate-100 rounded text-sm">
+                    {formData.tags.map((tag) => (
+                      <span
+                        key={tag}
+                        className="inline-flex items-center gap-1 px-2 py-1 bg-slate-100 rounded text-sm"
+                      >
                         {tag}
                         <button
                           type="button"
@@ -918,7 +935,6 @@ function EventsPage() {
                 )}
               </div>
 
-              {/* Form Actions */}
               <div className="flex gap-3 pt-4 border-t">
                 <button
                   type="button"
@@ -930,8 +946,16 @@ function EventsPage() {
                 >
                   Cancel
                 </button>
-                <button type="submit" className="btn-primary flex-1" disabled={formLoading}>
-                  {formLoading ? "Saving..." : (editingEvent ? "Update Event" : "Create Event")}
+                <button
+                  type="submit"
+                  className="btn-primary flex-1"
+                  disabled={formLoading}
+                >
+                  {formLoading
+                    ? "Saving..."
+                    : editingEvent
+                    ? "Update Event"
+                    : "Create Event"}
                 </button>
               </div>
             </form>
@@ -957,18 +981,22 @@ function EventsPage() {
                   + Create Event
                 </button>
               )}
-              <Badge variant="info">Page {pagination.page} of {pagination.pages}</Badge>
+              <Badge variant="info">
+                Page {pagination.page} of {pagination.pages || 1}
+              </Badge>
             </div>
           }
         />
       </Card>
 
-      {/* Filters Section */}
+      {/* Filters */}
       <Card>
         <div className="space-y-4">
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <div>
-              <label className="label" htmlFor="city-filter">Filter by City</label>
+              <label className="label" htmlFor="city-filter">
+                Filter by City
+              </label>
               <input
                 id="city-filter"
                 className="input"
@@ -982,7 +1010,9 @@ function EventsPage() {
             </div>
 
             <div>
-              <label className="label" htmlFor="event-type-filter">Event Type</label>
+              <label className="label" htmlFor="event-type-filter">
+                Event Type
+              </label>
               <select
                 id="event-type-filter"
                 className="input"
@@ -992,7 +1022,7 @@ function EventsPage() {
                   setPage(1);
                 }}
               >
-                {eventTypes.map(type => (
+                {eventTypes.map((type) => (
                   <option key={type.value} value={type.value}>
                     {type.label}
                   </option>
@@ -1001,7 +1031,9 @@ function EventsPage() {
             </div>
 
             <div>
-              <label className="label" htmlFor="status-filter">Status</label>
+              <label className="label" htmlFor="status-filter">
+                Status
+              </label>
               <select
                 id="status-filter"
                 className="input"
@@ -1011,7 +1043,7 @@ function EventsPage() {
                   setPage(1);
                 }}
               >
-                {statusOptions.map(opt => (
+                {statusOptions.map((opt) => (
                   <option key={opt.value} value={opt.value}>
                     {opt.label}
                   </option>
@@ -1029,7 +1061,6 @@ function EventsPage() {
             </div>
           </div>
 
-          {/* Pagination Controls */}
           <div className="flex items-center justify-between border-t pt-4">
             <div className="text-sm text-slate-600">
               Showing {events.length} of {pagination.total} events
@@ -1047,7 +1078,9 @@ function EventsPage() {
               </span>
               <button
                 className="btn-secondary"
-                onClick={() => setPage((p) => Math.min(pagination.pages || p, p + 1))}
+                onClick={() =>
+                  setPage((p) => Math.min(pagination.pages || p, p + 1))
+                }
                 disabled={page === pagination.pages}
               >
                 Next
@@ -1057,33 +1090,39 @@ function EventsPage() {
         </div>
       </Card>
 
-      {/* Events Grid */}
       {loading && <LoadingSpinner label="Loading events..." />}
-      
+
       {error && (
         <FeedbackMessage tone="error" onDismiss={() => setError("")}>
           {error}
         </FeedbackMessage>
       )}
 
+      {/* Event cards */}
       {!loading && !error && events.length > 0 && (
         <div className="grid gap-4 lg:grid-cols-2">
           {events.map((event) => {
             const statusConfig = formatStatus(event.status);
             const isFull = event.currentParticipants >= event.maxParticipants;
             const userJoined = isUserJoined(event);
-            
+            const canManage = canManageEvent(event);
+
             return (
-              <Card 
-                key={event._id} 
+              <Card
+                key={event._id}
                 className="cursor-pointer transition hover:-translate-y-0.5 hover:shadow-card"
-                onClick={() => openEventDetails(event)}
+                onClick={async () => {
+                  await fetchEventDetails(event._id);
+                  setShowDetailsModal(true);
+                }}
               >
                 <div className="flex flex-col gap-4">
                   <div className="flex items-start justify-between">
                     <div className="flex-1">
-                      <h2 className="text-lg font-semibold text-slate-900">{event.title}</h2>
-                      <div className="mt-1 flex items-center gap-2">
+                      <h2 className="text-lg font-semibold text-slate-900">
+                        {event.title}
+                      </h2>
+                      <div className="mt-1 flex flex-wrap items-center gap-2">
                         <Badge variant={statusConfig.variant}>
                           {statusConfig.label}
                         </Badge>
@@ -1097,30 +1136,64 @@ function EventsPage() {
                         )}
                       </div>
                     </div>
+
+                    {canManage && (
+                      <div className="flex gap-1">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleEditEvent(event);
+                          }}
+                          className="text-blue-600 hover:text-blue-800 text-sm px-2 py-1 bg-blue-50 rounded"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteEvent(event._id);
+                          }}
+                          className="text-red-600 hover:text-red-800 text-sm px-2 py-1 bg-red-50 rounded"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    )}
                   </div>
-                  
+
                   <p className="text-sm text-slate-600 line-clamp-2">
                     {event.description}
                   </p>
-                  
+
                   <div className="grid gap-2 text-sm text-slate-600 sm:grid-cols-2">
                     <div className="flex items-center gap-2">
-                      <span className="font-semibold text-slate-800">📍 Location:</span>
+                      <span className="font-semibold text-slate-800">
+                        📍 Location:
+                      </span>
                       <span>{event.location?.city || "Virtual"}</span>
                     </div>
                     <div className="flex items-center gap-2">
-                      <span className="font-semibold text-slate-800">📅 Date:</span>
+                      <span className="font-semibold text-slate-800">
+                        📅 Date:
+                      </span>
                       <span>{formatDate(event.startDate)}</span>
                     </div>
                     <div className="flex items-center gap-2">
-                      <span className="font-semibold text-slate-800">👥 Capacity:</span>
+                      <span className="font-semibold text-slate-800">
+                        👥 Capacity:
+                      </span>
                       <span>
-                        {event.currentParticipants || 0}/{event.maxParticipants || 0}
-                        {isFull && <span className="ml-1 text-orange-600">(Full)</span>}
+                        {event.currentParticipants || 0}/
+                        {event.maxParticipants || 0}
+                        {isFull && (
+                          <span className="ml-1 text-orange-600">(Full)</span>
+                        )}
                       </span>
                     </div>
                     <div className="flex items-center gap-2">
-                      <span className="font-semibold text-slate-800">👤 Organizer:</span>
+                      <span className="font-semibold text-slate-800">
+                        👤 Organizer:
+                      </span>
                       <span>{event.createdBy?.name || "System"}</span>
                     </div>
                   </div>
@@ -1143,13 +1216,14 @@ function EventsPage() {
               ? "Try adjusting your filters to see more events."
               : "No events are currently scheduled. Check back later for community activities!"
           }
-          actionLabel={city || eventType || status ? "Clear Filters" : "View Dashboard"}
+          actionLabel={
+            city || eventType || status ? "Clear Filters" : "View Dashboard"
+          }
           actionTo={city || eventType || status ? undefined : "/dashboard"}
           onAction={city || eventType || status ? handleResetFilters : undefined}
         />
       )}
 
-      {/* Modals */}
       {showDetailsModal && <EventDetailsModal />}
       {showFormModal && <EventFormModal />}
     </section>

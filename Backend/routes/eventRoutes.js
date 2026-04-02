@@ -7,8 +7,8 @@ const eventController = require('../controllers/eventController.js');
 // Public routes (no authentication required)
 router.get('/', eventController.getEvents);
 router.get('/search/nearby', eventController.searchNearbyEvents);
+router.get('/:id/participants', protect, eventController.getEventParticipants);
 router.get('/:id', eventController.getEventById);
-router.get('/:id/participants', eventController.getEventParticipants);
 
 // Protected routes (authentication required)
 // User specific routes
