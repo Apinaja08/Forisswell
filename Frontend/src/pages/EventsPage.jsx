@@ -390,293 +390,311 @@ function EventsPage() {
     }));
   };
 
-  // Event Details Modal
-  const EventDetailsModal = () => {
-    if (!selectedEvent) return null;
+// Event Details Modal
+const EventDetailsModal = () => {
+  if (!selectedEvent) return null;
 
-    const statusConfig = formatStatus(selectedEvent.status);
-    const isJoined = isUserJoined(selectedEvent);
-    const participantStatus = getUserParticipantStatus(selectedEvent);
-    const isFull = selectedEvent.currentParticipants >= selectedEvent.maxParticipants;
-    const canJoin = !isJoined && !isFull && selectedEvent.status === "upcoming";
-    const canManage = canManageEvent(selectedEvent);
-    const canViewParts = canViewParticipants(selectedEvent);
+  const statusConfig = formatStatus(selectedEvent.status);
+  const isJoined = isUserJoined(selectedEvent);
+  const participantStatus = getUserParticipantStatus(selectedEvent);
+  const isFull = selectedEvent.currentParticipants >= selectedEvent.maxParticipants;
+  const canJoin = !isJoined && !isFull && selectedEvent.status === "upcoming";
+  const canManage = canManageEvent(selectedEvent);
+  const canViewParts = canViewParticipants(selectedEvent);
 
-    const confirmedParticipants = selectedEvent.participants?.filter((p) => p.status === "confirmed") || [];
-    const waitlistParticipants = selectedEvent.participants?.filter((p) => p.status === "waitlist") || [];
+  // Helper function to get user name
+  const getUserName = (participant) => {
+    if (!participant) return "Anonymous User";
+    
+    // Check different possible structures
+    if (participant.user) {
+      return participant.user.fullName || 
+             participant.user.name || 
+             participant.user.fullname ||
+             "Anonymous User";
+    }
+    
+    return participant.fullName || 
+           participant.name || 
+           participant.fullname ||
+           "Anonymous User";
+  };
 
-    return (
-      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-        <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-          <div className="p-6 space-y-6">
-            {/* Header */}
-            <div className="border-b pb-4">
-              <div className="flex items-start justify-between">
-                <div className="flex-1">
-                  <h2 className="text-2xl font-bold text-slate-900">
-                    {selectedEvent.title}
-                  </h2>
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    <Badge variant={statusConfig.variant}>
-                      {statusConfig.label}
-                    </Badge>
-                    <Badge variant="secondary">
-                      {formatEventType(selectedEvent.eventType)}
-                    </Badge>
-                    {isFull && <Badge variant="warning">Full</Badge>}
-                  </div>
-                </div>
-                <div className="flex gap-2 ml-4">
-                  {canManage && (
-                    <>
-                      <button
-                        onClick={() => {
-                          setShowDetailsModal(false);
-                          handleEditEvent(selectedEvent);
-                        }}
-                        className="px-3 py-1 text-sm bg-blue-500 text-white rounded hover:bg-blue-600"
-                      >
-                        Edit
-                      </button>
-                      <button
-                        onClick={() => handleDeleteEvent(selectedEvent._id)}
-                        className="px-3 py-1 text-sm bg-red-500 text-white rounded hover:bg-red-600"
-                      >
-                        Delete
-                      </button>
-                    </>
-                  )}
-                  <button
-                    onClick={() => setShowDetailsModal(false)}
-                    className="text-gray-500 hover:text-gray-700 text-2xl leading-none"
-                  >
-                    ×
-                  </button>
+  // Helper function to get user initial
+  const getUserInitial = (participant) => {
+    const name = getUserName(participant);
+    return name.charAt(0).toUpperCase() || "U";
+  };
+
+  const confirmedParticipants = selectedEvent.participants?.filter((p) => p.status === "confirmed") || [];
+  const waitlistParticipants = selectedEvent.participants?.filter((p) => p.status === "waitlist") || [];
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+        <div className="p-6 space-y-6">
+          {/* Header */}
+          <div className="border-b pb-4">
+            <div className="flex items-start justify-between">
+              <div className="flex-1">
+                <h2 className="text-2xl font-bold text-slate-900">
+                  {selectedEvent.title}
+                </h2>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <Badge variant={statusConfig.variant}>
+                    {statusConfig.label}
+                  </Badge>
+                  <Badge variant="secondary">
+                    {formatEventType(selectedEvent.eventType)}
+                  </Badge>
+                  {isFull && <Badge variant="warning">Full</Badge>}
                 </div>
               </div>
+              <div className="flex gap-2 ml-4">
+                {canManage && (
+                  <>
+                    <button
+                      onClick={() => {
+                        setShowDetailsModal(false);
+                        handleEditEvent(selectedEvent);
+                      }}
+                      className="px-3 py-1 text-sm bg-blue-500 text-white rounded hover:bg-blue-600"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      onClick={() => handleDeleteEvent(selectedEvent._id)}
+                      className="px-3 py-1 text-sm bg-red-500 text-white rounded hover:bg-red-600"
+                    >
+                      Delete
+                    </button>
+                  </>
+                )}
+                <button
+                  onClick={() => setShowDetailsModal(false)}
+                  className="text-gray-500 hover:text-gray-700 text-2xl leading-none"
+                >
+                  ×
+                </button>
+              </div>
             </div>
+          </div>
 
-            {/* Description */}
+          {/* Description */}
+          <div>
+            <h3 className="text-lg font-semibold text-slate-900 mb-2">
+              Description
+            </h3>
+            <p className="text-slate-600 whitespace-pre-wrap">
+              {selectedEvent.description}
+            </p>
+          </div>
+
+          {/* Details grid */}
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <span className="font-semibold text-slate-800">
+                  📍 Location:
+                </span>
+                <span className="text-slate-600">
+                  {selectedEvent.location?.address
+                    ? `${selectedEvent.location.address}, `
+                    : ""}
+                  {selectedEvent.location?.city || "Virtual"}
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="font-semibold text-slate-800">
+                  📅 Start Date:
+                </span>
+                <span className="text-slate-600">
+                  {formatDate(selectedEvent.startDate)}
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="font-semibold text-slate-800">
+                  ⏰ End Date:
+                </span>
+                <span className="text-slate-600">
+                  {formatDate(selectedEvent.endDate)}
+                </span>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <span className="font-semibold text-slate-800">
+                  👥 Participants:
+                </span>
+                <span className="text-slate-600">
+                  {selectedEvent.currentParticipants || 0} /{" "}
+                  {selectedEvent.maxParticipants || 0}
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="font-semibold text-slate-800">
+                  👤 Organizer:
+                </span>
+                <span className="text-slate-600">
+                  {selectedEvent.createdBy?.fullName || selectedEvent.createdBy?.name || "System"}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Participant list — only admin or creator */}
+          {canViewParts && selectedEvent.participants?.length > 0 && (
             <div>
-              <h3 className="text-lg font-semibold text-slate-900 mb-2">
-                Description
+              <h3 className="text-lg font-semibold text-slate-900 mb-3">
+                Participants ({selectedEvent.participants.length})
               </h3>
-              <p className="text-slate-600 whitespace-pre-wrap">
-                {selectedEvent.description}
+
+              {confirmedParticipants.length > 0 && (
+                <div className="mb-4">
+                  <h4 className="font-medium text-slate-800 mb-2">
+                    Confirmed ({confirmedParticipants.length})
+                  </h4>
+                  <div className="space-y-2">
+                    {confirmedParticipants.map((participant, index) => (
+                      <div
+                        key={index}
+                        className="flex items-center justify-between p-2 bg-green-50 rounded"
+                      >
+                        <div className="flex items-center gap-2">
+                          <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center">
+                            <span className="text-green-600 text-sm font-semibold">
+                              {getUserInitial(participant)}
+                            </span>
+                          </div>
+                          <div>
+                            <p className="text-sm font-medium text-slate-900">
+                              {getUserName(participant)}
+                            </p>
+                            <p className="text-xs text-slate-500">
+                              Joined: {participant.joinedAt ? new Date(participant.joinedAt).toLocaleDateString() : 'Recently'}
+                            </p>
+                          </div>
+                        </div>
+                        <Badge variant="success" size="sm">
+                          Confirmed
+                        </Badge>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {waitlistParticipants.length > 0 && (
+                <div>
+                  <h4 className="font-medium text-slate-800 mb-2">
+                    Waitlist ({waitlistParticipants.length})
+                  </h4>
+                  <div className="space-y-2">
+                    {waitlistParticipants.map((participant, index) => (
+                      <div
+                        key={index}
+                        className="flex items-center justify-between p-2 bg-yellow-50 rounded"
+                      >
+                        <div className="flex items-center gap-2">
+                          <div className="w-8 h-8 bg-yellow-100 rounded-full flex items-center justify-center">
+                            <span className="text-yellow-600 text-sm font-semibold">
+                              {getUserInitial(participant)}
+                            </span>
+                          </div>
+                          <div>
+                            <p className="text-sm font-medium text-slate-900">
+                              {getUserName(participant)}
+                            </p>
+                            <p className="text-xs text-slate-500">
+                              Joined: {participant.joinedAt ? new Date(participant.joinedAt).toLocaleDateString() : 'Recently'}
+                            </p>
+                          </div>
+                        </div>
+                        <Badge variant="warning" size="sm">
+                          Waitlist
+                        </Badge>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {!canViewParts && selectedEvent.participants?.length > 0 && (
+            <div className="bg-gray-50 p-4 rounded-lg text-center">
+              <p className="text-sm text-gray-600">
+                Participant list is only visible to event organizers and admins.
               </p>
             </div>
+          )}
 
-            {/* Details grid */}
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-2">
-                <div className="flex items-center gap-2">
-                  <span className="font-semibold text-slate-800">
-                    📍 Location:
-                  </span>
-                  <span className="text-slate-600">
-                    {selectedEvent.location?.address
-                      ? `${selectedEvent.location.address}, `
-                      : ""}
-                    {selectedEvent.location?.city || "Virtual"}
-                  </span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="font-semibold text-slate-800">
-                    📅 Start Date:
-                  </span>
-                  <span className="text-slate-600">
-                    {formatDate(selectedEvent.startDate)}
-                  </span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="font-semibold text-slate-800">
-                    ⏰ End Date:
-                  </span>
-                  <span className="text-slate-600">
-                    {formatDate(selectedEvent.endDate)}
-                  </span>
-                </div>
-              </div>
-              <div className="space-y-2">
-                <div className="flex items-center gap-2">
-                  <span className="font-semibold text-slate-800">
-                    👥 Participants:
-                  </span>
-                  <span className="text-slate-600">
-                    {selectedEvent.currentParticipants || 0} /{" "}
-                    {selectedEvent.maxParticipants || 0}
-                  </span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="font-semibold text-slate-800">
-                    👤 Organizer:
-                  </span>
-                  <span className="text-slate-600">
-                    {selectedEvent.createdBy?.name || "System"}
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            {/* Participant list — only admin or creator */}
-            {canViewParts && selectedEvent.participants?.length > 0 && (
-              <div>
-                <h3 className="text-lg font-semibold text-slate-900 mb-3">
-                  Participants ({selectedEvent.participants.length})
-                </h3>
-
-                {confirmedParticipants.length > 0 && (
-                  <div className="mb-4">
-                    <h4 className="font-medium text-slate-800 mb-2">
-                      Confirmed ({confirmedParticipants.length})
-                    </h4>
-                    <div className="space-y-2">
-                      {confirmedParticipants.map((participant, index) => (
-                        <div
-                          key={index}
-                          className="flex items-center justify-between p-2 bg-green-50 rounded"
-                        >
-                          <div className="flex items-center gap-2">
-                            <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center">
-                              <span className="text-green-600 text-sm font-semibold">
-                                {participant.user?.name?.charAt(0) || "U"}
-                              </span>
-                            </div>
-                            <div>
-                              <p className="text-sm font-medium text-slate-900">
-                                {participant.user?.name || "Anonymous"}
-                              </p>
-                              <p className="text-xs text-slate-500">
-                                Joined:{" "}
-                                {new Date(
-                                  participant.joinedAt
-                                ).toLocaleDateString()}
-                              </p>
-                            </div>
-                          </div>
-                          <Badge variant="success" size="sm">
-                            Confirmed
-                          </Badge>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {waitlistParticipants.length > 0 && (
-                  <div>
-                    <h4 className="font-medium text-slate-800 mb-2">
-                      Waitlist ({waitlistParticipants.length})
-                    </h4>
-                    <div className="space-y-2">
-                      {waitlistParticipants.map((participant, index) => (
-                        <div
-                          key={index}
-                          className="flex items-center justify-between p-2 bg-yellow-50 rounded"
-                        >
-                          <div className="flex items-center gap-2">
-                            <div className="w-8 h-8 bg-yellow-100 rounded-full flex items-center justify-center">
-                              <span className="text-yellow-600 text-sm font-semibold">
-                                {participant.user?.name?.charAt(0) || "U"}
-                              </span>
-                            </div>
-                            <div>
-                              <p className="text-sm font-medium text-slate-900">
-                                {participant.user?.name || "Anonymous"}
-                              </p>
-                              <p className="text-xs text-slate-500">
-                                Joined:{" "}
-                                {new Date(
-                                  participant.joinedAt
-                                ).toLocaleDateString()}
-                              </p>
-                            </div>
-                          </div>
-                          <Badge variant="warning" size="sm">
-                            Waitlist
-                          </Badge>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {!canViewParts && selectedEvent.participants?.length > 0 && (
-              <div className="bg-gray-50 p-4 rounded-lg text-center">
-                <p className="text-sm text-gray-600">
-                  Participant list is only visible to event organizers and admins.
-                </p>
-              </div>
-            )}
-
-            {/* Join / Leave actions */}
-            {isLoggedIn ? (
-              <div className="flex gap-3 pt-4 border-t">
-                {!isJoined && canJoin && (
-                  <button
-                    onClick={() => handleJoinEvent(selectedEvent._id)}
-                    className="btn-primary flex-1"
-                  >
-                    Join Event
-                  </button>
-                )}
-                {isJoined && participantStatus === "confirmed" && (
+          {/* Join / Leave actions */}
+          {isLoggedIn ? (
+            <div className="flex gap-3 pt-4 border-t">
+              {!isJoined && canJoin && (
+                <button
+                  onClick={() => handleJoinEvent(selectedEvent._id)}
+                  className="btn-primary flex-1"
+                >
+                  Join Event
+                </button>
+              )}
+              {isJoined && participantStatus === "confirmed" && (
+                <button
+                  onClick={() => handleLeaveEvent(selectedEvent._id)}
+                  className="btn-secondary flex-1"
+                >
+                  Leave Event
+                </button>
+              )}
+              {isJoined && participantStatus === "waitlist" && (
+                <div className="flex-1 text-center">
+                  <Badge variant="warning" className="w-full">
+                    On Waitlist
+                  </Badge>
                   <button
                     onClick={() => handleLeaveEvent(selectedEvent._id)}
-                    className="btn-secondary flex-1"
+                    className="btn-secondary w-full mt-2"
                   >
-                    Leave Event
-                  </button>
-                )}
-                {isJoined && participantStatus === "waitlist" && (
-                  <div className="flex-1 text-center">
-                    <Badge variant="warning" className="w-full">
-                      On Waitlist
-                    </Badge>
-                    <button
-                      onClick={() => handleLeaveEvent(selectedEvent._id)}
-                      className="btn-secondary w-full mt-2"
-                    >
-                      Cancel Waitlist
-                    </button>
-                  </div>
-                )}
-                {!isJoined && isFull && (
-                  <div className="flex-1 text-center">
-                    <Badge variant="warning" className="w-full">
-                      Event is Full
-                    </Badge>
-                    <button
-                      onClick={() => handleJoinEvent(selectedEvent._id)}
-                      className="btn-secondary w-full mt-2"
-                    >
-                      Join Waitlist
-                    </button>
-                  </div>
-                )}
-              </div>
-            ) : (
-              <div className="pt-4 border-t">
-                <div className="bg-blue-50 p-4 rounded-lg text-center">
-                  <p className="text-sm text-blue-800 mb-2">
-                    Please login to join this event
-                  </p>
-                  <button
-                    className="btn-primary"
-                    onClick={() => (window.location.href = "/login")}
-                  >
-                    Login to Join
+                    Cancel Waitlist
                   </button>
                 </div>
+              )}
+              {!isJoined && isFull && (
+                <div className="flex-1 text-center">
+                  <Badge variant="warning" className="w-full">
+                    Event is Full
+                  </Badge>
+                  <button
+                    onClick={() => handleJoinEvent(selectedEvent._id)}
+                    className="btn-secondary w-full mt-2"
+                  >
+                    Join Waitlist
+                  </button>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="pt-4 border-t">
+              <div className="bg-blue-50 p-4 rounded-lg text-center">
+                <p className="text-sm text-blue-800 mb-2">
+                  Please login to join this event
+                </p>
+                <button
+                  className="btn-primary"
+                  onClick={() => (window.location.href = "/login")}
+                >
+                  Login to Join
+                </button>
               </div>
-            )}
-          </div>
+            </div>
+          )}
         </div>
       </div>
-    );
-  };
+    </div>
+  );
+};
 
   // Event Form Modal
   const EventFormModal = () => {

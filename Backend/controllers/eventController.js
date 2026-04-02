@@ -23,10 +23,8 @@ const createEvent = async (req, res) => {
     const event = new Event(eventData);
     await event.save();
 
-    // Populate the createdBy field before sending response
-    await event.populate('createdBy', 'name email avatar');
+    await event.populate('createdBy', 'fullName name email avatar');
 
-    // Add to creator's calendar if they have calendar connected
     if (req.user.calendarConnected) {
       try {
         const calendarEventId = await calendarService.addToGoogleCalendar(event, req.user);
@@ -37,7 +35,6 @@ const createEvent = async (req, res) => {
       }
     }
 
-    // Schedule reminders
     if (event.reminders) {
       await notificationService.scheduleEventReminders(event);
     }
@@ -83,8 +80,8 @@ const getEvents = async (req, res) => {
     }
 
     const events = await Event.find(query)
-      .populate('createdBy', 'name email avatar')
-      .select('-participants')
+      .populate('createdBy', 'fullName name email avatar')
+      .select('-participants') // Don't send participant list in list view for privacy
       .sort({ startDate: 1 })
       .limit(limit * 1)
       .skip((page - 1) * limit);
@@ -115,7 +112,8 @@ const getEvents = async (req, res) => {
 const getEventById = async (req, res) => {
   try {
     const event = await Event.findById(req.params.id)
-      .populate('createdBy', 'name email avatar bio');
+      .populate('createdBy', 'fullName name email avatar bio')
+      .populate('participants.user', 'fullName name email avatar'); // ✅ FIXED: Populate user data
 
     if (!event) {
       return res.status(404).json({
@@ -150,7 +148,6 @@ const joinEvent = async (req, res) => {
       });
     }
 
-    // Check if user already joined
     const alreadyJoined = event.participants.some(
       p => p.user.toString() === req.user.id
     );
@@ -162,11 +159,9 @@ const joinEvent = async (req, res) => {
       });
     }
 
-    // Check if event is full
     const isFull = event.currentParticipants >= event.maxParticipants;
     const status = isFull ? 'waitlist' : 'confirmed';
 
-    // Add participant
     event.participants.push({
       user: req.user.id,
       joinedAt: new Date(),
@@ -179,7 +174,6 @@ const joinEvent = async (req, res) => {
 
     await event.save();
 
-    // Add to user's calendar if they have calendar connected
     if (req.user.calendarConnected && status === 'confirmed') {
       try {
         await calendarService.addToGoogleCalendar(event, req.user);
@@ -188,7 +182,6 @@ const joinEvent = async (req, res) => {
       }
     }
 
-    // Send confirmation email
     await notificationService.sendJoinConfirmation(event, req.user, status);
 
     res.json({
@@ -221,7 +214,6 @@ const leaveEvent = async (req, res) => {
       });
     }
 
-    // Check if user is a participant
     const participantIndex = event.participants.findIndex(
       p => p.user.toString() === req.user.id
     );
@@ -233,14 +225,12 @@ const leaveEvent = async (req, res) => {
       });
     }
 
-    // Remove participant
     const removedParticipant = event.participants[participantIndex];
     event.participants.splice(participantIndex, 1);
     
     if (removedParticipant.status === 'confirmed') {
       event.currentParticipants -= 1;
       
-      // Promote first waitlisted user if any
       const waitlistedUser = event.participants.find(p => p.status === 'waitlist');
       if (waitlistedUser) {
         waitlistedUser.status = 'confirmed';
@@ -250,7 +240,6 @@ const leaveEvent = async (req, res) => {
 
     await event.save();
 
-    // Remove from calendar if needed
     if (req.user.calendarConnected && event.calendarEventId) {
       try {
         await calendarService.removeFromGoogleCalendar(event.calendarEventId, req.user);
@@ -271,15 +260,13 @@ const leaveEvent = async (req, res) => {
   }
 };
 
-// Update these specific functions in your eventController.js
-
 // @desc    Get event participants
 // @route   GET /api/events/:id/participants
 // @access  Private (Admin or Event Creator only)
 const getEventParticipants = async (req, res) => {
   try {
     const event = await Event.findById(req.params.id)
-      .populate('participants.user', 'name email avatar bio');
+      .populate('participants.user', 'fullName name email avatar bio');
 
     if (!event) {
       return res.status(404).json({
@@ -288,7 +275,6 @@ const getEventParticipants = async (req, res) => {
       });
     }
 
-    // CRITICAL FIX: Check permissions
     const isAdmin = req.user.role === 'admin';
     const isCreator = event.createdBy.toString() === req.user.id;
 
@@ -343,7 +329,6 @@ const updateEvent = async (req, res) => {
       });
     }
 
-    // CRITICAL FIX: Check permissions
     const isAdmin = req.user.role === 'admin';
     const isCreator = event.createdBy.toString() === req.user.id;
 
@@ -354,7 +339,6 @@ const updateEvent = async (req, res) => {
       });
     }
 
-    // Update fields
     const updatableFields = [
       'title', 'description', 'eventType', 'startDate', 'endDate',
       'location', 'maxParticipants', 'tags', 'images', 'status'
@@ -367,7 +351,8 @@ const updateEvent = async (req, res) => {
     });
 
     await event.save();
-    await event.populate('createdBy', 'name email avatar');
+    await event.populate('createdBy', 'fullName name email avatar');
+    await event.populate('participants.user', 'fullName name email avatar');
 
     res.json({
       success: true,
@@ -396,7 +381,6 @@ const deleteEvent = async (req, res) => {
       });
     }
 
-    // CRITICAL FIX: Check permissions
     const isAdmin = req.user.role === 'admin';
     const isCreator = event.createdBy.toString() === req.user.id;
 
@@ -427,8 +411,8 @@ const deleteEvent = async (req, res) => {
 const getUserCreatedEvents = async (req, res) => {
   try {
     const events = await Event.find({ createdBy: req.user.id })
-      .populate('createdBy', 'name email avatar')
-      .populate('participants.user', 'name email avatar')
+      .populate('createdBy', 'fullName name email avatar')
+      .populate('participants.user', 'fullName name email avatar')
       .sort({ createdAt: -1 });
 
     res.json({
@@ -451,8 +435,8 @@ const getUserJoinedEvents = async (req, res) => {
     const events = await Event.find({
       'participants.user': req.user.id
     })
-    .populate('createdBy', 'name email avatar')
-    .populate('participants.user', 'name email avatar')
+    .populate('createdBy', 'fullName name email avatar')
+    .populate('participants.user', 'fullName name email avatar')
     .sort({ startDate: 1 });
 
     res.json({
@@ -481,7 +465,6 @@ const searchNearbyEvents = async (req, res) => {
       });
     }
 
-    // Find events within radius (in kilometers)
     const events = await Event.find({
       'location.coordinates': {
         $near: {
@@ -493,7 +476,7 @@ const searchNearbyEvents = async (req, res) => {
         }
       },
       status: 'upcoming'
-    }).populate('createdBy', 'name email avatar');
+    }).populate('createdBy', 'fullName name email avatar');
 
     res.json({
       success: true,
