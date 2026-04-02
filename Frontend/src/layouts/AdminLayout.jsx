@@ -7,21 +7,21 @@ function AdminLayout({ children }) {
 
   const adminNav = useMemo(
     () => [
-      { to: "/admin", label: "Dashboard", icon: "📊" },
-      { to: "/admin/alerts", label: "Alerts Management", icon: "⚠️" },
-      { to: "/risk-analysis", label: "Risk Analysis", icon: "🌲" },
-      { to: "/admin/volunteers", label: "Volunteer Directory", icon: "👥" },
-      { to: "/admin/leaderboard", label: "Leaderboard", icon: "🏆" },
-      { to: "/admin/map", label: "Map View", icon: "🗺️" },
-      { to: "/admin/reports", label: "Reports & Analytics", icon: "📈" },
-      { to: "/admin/settings", label: "Settings", icon: "⚙️" },
+      { to: "/admin", label: "Dashboard" },
+      { to: "/admin/alerts", label: "Alerts Management" },
+      { to: "/risk-analysis", label: "Risk Analysis"},
+      { to: "/admin/volunteers", label: "Volunteer Directory" },
+      { to: "/admin/leaderboard", label: "Leaderboard" },
+      { to: "/admin/map", label: "Map View" },
+      { to: "/admin/reports", label: "Reports & Analytics" },
+      { to: "/admin/settings", label: "Settings" },
     ],
     []
   );
 
   const navLinkClass = ({ isActive }) =>
     cx(
-      "flex items-center gap-3 rounded-lg px-4 py-3 text-sm font-medium transition-colors",
+      "flex items-center rounded-lg px-4 py-3 text-sm font-medium transition-colors",
       isActive
         ? "bg-green-100 text-green-700"
         : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
@@ -54,7 +54,6 @@ function AdminLayout({ children }) {
               className={navLinkClass}
               end={item.to === "/admin"}
             >
-              <span className="text-lg">{item.icon}</span>
               <span>{item.label}</span>
             </NavLink>
           ))}

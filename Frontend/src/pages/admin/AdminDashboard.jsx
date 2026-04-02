@@ -225,10 +225,9 @@ function AdminDashboard() {
       <h2 className="text-lg font-semibold text-slate-900 mt-4">Quick Actions</h2>
       <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
         <Card className="cursor-pointer transition-all hover:shadow-lg hover:scale-105" onClick={() => navigate("/admin/alerts?status=pending")}>
-          <div className="space-y-2 text-center">
-            <div className="text-3xl">⚠️</div>
-            <h3 className="font-semibold">Review Alerts</h3>
-            <p className="text-sm text-slate-600">Manage pending alerts</p>
+          <div className="space-y-2">
+            <h3 className="font-semibold">Review Pending Alerts</h3>
+            <p className="text-sm text-slate-600">Manage unassigned alerts</p>
           </div>
         </Card>
         
@@ -241,18 +240,16 @@ function AdminDashboard() {
         </Card>
         
         <Card className="cursor-pointer transition-all hover:shadow-lg hover:scale-105" onClick={() => navigate("/admin/volunteers")}>
-          <div className="space-y-2 text-center">
-            <div className="text-3xl">👥</div>
-            <h3 className="font-semibold">Volunteers</h3>
-            <p className="text-sm text-slate-600">Manage volunteers</p>
+          <div className="space-y-2">
+            <h3 className="font-semibold">Manage Volunteers</h3>
+            <p className="text-sm text-slate-600">View and manage volunteer profiles</p>
           </div>
         </Card>
         
         <Card className="cursor-pointer transition-all hover:shadow-lg hover:scale-105" onClick={() => navigate("/admin/leaderboard")}>
-          <div className="space-y-2 text-center">
-            <div className="text-3xl">🏆</div>
-            <h3 className="font-semibold">Leaderboard</h3>
-            <p className="text-sm text-slate-600">Top volunteers</p>
+          <div className="space-y-2">
+            <h3 className="font-semibold">View Leaderboard</h3>
+            <p className="text-sm text-slate-600">Top performing volunteers</p>
           </div>
         </Card>
       </div>
@@ -353,7 +350,7 @@ function AdminDashboard() {
                   </div>
                   <div className="text-right">
                     <span className="inline-block px-2 py-1 text-xs font-semibold bg-green-100 text-green-700 rounded">
-                      ✓ Completed
+                      Completed
                     </span>
                     <p className="text-xs text-slate-600 mt-2">
                       {new Date(alert.completedAt).toLocaleDateString()}
