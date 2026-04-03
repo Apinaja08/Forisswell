@@ -136,7 +136,6 @@ const AnalysisLoadingModal = ({ progress, currentStep, stepStatus }) => {
           <p className="text-sm text-slate-600 mt-1">{currentStep}</p>
         </div>
 
-        {/* Progress Bar */}
         <div className="mb-6">
           <div className="flex justify-between text-sm text-slate-600 mb-1">
             <span>Progress</span>
@@ -150,7 +149,6 @@ const AnalysisLoadingModal = ({ progress, currentStep, stepStatus }) => {
           </div>
         </div>
 
-        {/* Steps */}
         <div className="space-y-3">
           {steps.map((step) => (
             <div key={step.key} className="flex items-center gap-3">
@@ -215,7 +213,6 @@ const RiskAnalysisPage = () => {
   const [mapCenter, setMapCenter] = useState([20, 0]);
   const [mapZoom, setMapZoom] = useState(2);
   
-  // Loading state for analysis
   const [analysisProgress, setAnalysisProgress] = useState(0);
   const [analysisCurrentStep, setAnalysisCurrentStep] = useState("");
   const [analysisStepStatus, setAnalysisStepStatus] = useState({
@@ -240,9 +237,289 @@ const RiskAnalysisPage = () => {
   const [deleteConfirm, setDeleteConfirm] = useState(null);
   const [actionLoading, setActionLoading] = useState(false);
 
+  // Event organization states
+  const [showOrganizeEventModal, setShowOrganizeEventModal] = useState(false);
+  const [organizeEventData, setOrganizeEventData] = useState(null);
+  const [eventFormData, setEventFormData] = useState({
+    title: "",
+    description: "",
+    eventType: "tree_planting",
+    startDate: "",
+    endDate: "",
+    location: {
+      address: "",
+      city: "",
+      coordinates: { lat: "", lng: "" }
+    },
+    maxParticipants: 50,
+    tags: [],
+    reminders: true
+  });
+  const [eventFormLoading, setEventFormLoading] = useState(false);
+  const [eventFormError, setEventFormError] = useState("");
+  const [eventFormSuccess, setEventFormSuccess] = useState("");
+  const [eventTagInput, setEventTagInput] = useState("");
+
   // Get user from localStorage
   const user = JSON.parse(localStorage.getItem("user") || "{}");
   const isAdmin = user?.role === "admin";
+
+  // Helper function to get polygon centroid
+  const getPolygonCentroid = (coordinates) => {
+    if (!coordinates || coordinates.length === 0) return null;
+    
+    const ring = coordinates[0] || coordinates;
+    let sumLat = 0;
+    let sumLng = 0;
+    
+    ring.forEach(coord => {
+      sumLng += coord[0];
+      sumLat += coord[1];
+    });
+    
+    return {
+      lat: sumLat / ring.length,
+      lng: sumLng / ring.length
+    };
+  };
+
+  // Reverse geocode function
+  const reverseGeocode = async (lat, lng) => {
+    const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`;
+    
+    try {
+      const response = await fetch(url, {
+        headers: {
+          "User-Agent": "Forisswell/1.0 (event-location-service)"
+        }
+      });
+      const data = await response.json();
+      
+      if (data && data.address) {
+        const address = data.address;
+        return {
+          address: `${address.road || ''} ${address.house_number || ''}`.trim() || address.neighbourhood || address.suburb || "Near Forest Area",
+          city: address.city || address.town || address.village || address.state || "Local Area",
+          fullAddress: data.display_name
+        };
+      }
+      return null;
+    } catch (error) {
+      console.error("Reverse geocoding failed:", error);
+      return null;
+    }
+  };
+
+  // Generate event description based on risk
+  const generateEventDescription = (risk) => {
+    let description = `This event is organized in response to a ${risk.riskLevel.toUpperCase()} risk assessment for ${risk.name}.\n\n`;
+    description += `Risk Score: ${risk.riskScore}/100\n`;
+    description += `Analysis Date: ${new Date(risk.analysisDate).toLocaleDateString()}\n\n`;
+    description += `Risk Factors Detected:\n`;
+    
+    if (risk.factors?.treeCoverLoss > 0) {
+      description += `• Tree Cover Loss: ${risk.factors.treeCoverLoss}%\n`;
+    }
+    if (risk.factors?.fireRisk > 0) {
+      description += `• Fire Risk: ${risk.factors.fireRisk}%\n`;
+    }
+    if (risk.factors?.encroachmentRisk > 0) {
+      description += `• Encroachment Risk: ${risk.factors.encroachmentRisk}%\n`;
+    }
+    if (risk.factors?.degradationRate > 0) {
+      description += `• Degradation Rate: ${risk.factors.degradationRate}%\n`;
+    }
+    if (risk.factors?.illegalLoggingProbability > 0) {
+      description += `• Illegal Logging Probability: ${risk.factors.illegalLoggingProbability}%\n`;
+    }
+    
+    description += `\nJoin us to help protect this area and mitigate environmental risks through community action!`;
+    
+    return description;
+  };
+
+  // Get suggested event type based on risk factors
+  const getSuggestedEventType = (risk) => {
+    const factors = risk.factors || {};
+    const maxFactor = Object.entries(factors).reduce((max, [key, value]) => 
+      value > max.value ? { key, value } : max, { key: '', value: 0 }
+    );
+    
+    switch(maxFactor.key) {
+      case 'treeCoverLoss':
+        return 'tree_planting';
+      case 'fireRisk':
+        return 'workshop';
+      case 'encroachmentRisk':
+        return 'community_garden';
+      case 'degradationRate':
+        return 'educational';
+      default:
+        return 'workshop';
+    }
+  };
+
+  // Get default start date based on risk level
+  const getDefaultStartDate = (risk) => {
+    const date = new Date();
+    if (risk.riskLevel === 'critical') {
+      date.setDate(date.getDate() + 3);
+    } else if (risk.riskLevel === 'high') {
+      date.setDate(date.getDate() + 7);
+    } else {
+      date.setDate(date.getDate() + 14);
+    }
+    date.setHours(10, 0, 0, 0);
+    return date.toISOString().slice(0, 16);
+  };
+
+  const getDefaultEndDate = (risk) => {
+    const startDate = new Date(getDefaultStartDate(risk));
+    startDate.setHours(startDate.getHours() + 3);
+    return startDate.toISOString().slice(0, 16);
+  };
+
+  const getDefaultMaxParticipants = (eventType) => {
+    switch(eventType) {
+      case 'tree_planting': return 100;
+      case 'workshop': return 30;
+      case 'community_garden': return 20;
+      case 'educational': return 50;
+      default: return 50;
+    }
+  };
+
+  // Handle organize event
+  const handleOrganizeEvent = async (risk) => {
+    const centroid = getPolygonCentroid(risk.coordinates?.coordinates);
+    
+    let locationInfo = {
+      address: risk.metadata?.region || "Forest Area",
+      city: risk.metadata?.country || "Local Region",
+      coordinates: centroid || { lat: 0, lng: 0 }
+    };
+    
+    if (centroid) {
+      try {
+        const geoData = await reverseGeocode(centroid.lat, centroid.lng);
+        if (geoData) {
+          locationInfo = {
+            address: geoData.address,
+            city: geoData.city,
+            coordinates: centroid
+          };
+        }
+      } catch (err) {
+        console.warn("Could not get address from coordinates");
+      }
+    }
+    
+    const eventTitle = `Intervention: ${risk.name}`;
+    const eventDescription = generateEventDescription(risk);
+    const suggestedEventType = getSuggestedEventType(risk);
+    
+    setOrganizeEventData(risk);
+    setEventFormData({
+      title: eventTitle,
+      description: eventDescription,
+      eventType: suggestedEventType,
+      startDate: getDefaultStartDate(risk),
+      endDate: getDefaultEndDate(risk),
+      location: locationInfo,
+      maxParticipants: getDefaultMaxParticipants(suggestedEventType),
+      tags: [risk.riskLevel, risk.metadata?.region, "risk-response", "intervention"].filter(Boolean),
+      reminders: true
+    });
+    setShowOrganizeEventModal(true);
+  };
+
+  // Handle submit event
+  const handleSubmitRiskEvent = async (e) => {
+    e.preventDefault();
+    
+    if (!eventFormData.startDate || !eventFormData.endDate) {
+      setEventFormError("Please select start and end dates");
+      return;
+    }
+    
+    if (new Date(eventFormData.startDate) >= new Date(eventFormData.endDate)) {
+      setEventFormError("End date must be after start date");
+      return;
+    }
+    
+    setEventFormLoading(true);
+    setEventFormError("");
+    setEventFormSuccess("");
+    
+    try {
+      const eventPayload = {
+        ...eventFormData,
+        metadata: {
+          relatedRiskId: organizeEventData._id,
+          riskLevel: organizeEventData.riskLevel,
+          riskScore: organizeEventData.riskScore,
+          generatedFromRisk: true
+        }
+      };
+      
+      const response = await api.post("/events", eventPayload);
+      
+      if (response.data.success) {
+        setEventFormSuccess("Event created successfully!");
+        
+        // Link event to risk
+        await api.post(`/risk/${organizeEventData._id}/link-event`, {
+          eventId: response.data.data._id
+        });
+        
+        setTimeout(() => {
+          setShowOrganizeEventModal(false);
+          fetchRiskAssessments();
+          if (selectedRisk?._id === organizeEventData._id) {
+            fetchRiskById(organizeEventData._id);
+          }
+        }, 1500);
+      }
+    } catch (err) {
+      setEventFormError(err.response?.data?.error || "Failed to create event");
+    } finally {
+      setEventFormLoading(false);
+    }
+  };
+
+  const handleEventFormChange = (e) => {
+    const { name, value } = e.target;
+    
+    if (name.includes(".")) {
+      const keys = name.split(".");
+      setEventFormData((prev) => {
+        const updated = { ...prev };
+        let obj = updated;
+        for (let i = 0; i < keys.length - 1; i++) {
+          obj[keys[i]] = { ...obj[keys[i]] };
+          obj = obj[keys[i]];
+        }
+        obj[keys[keys.length - 1]] = value;
+        return updated;
+      });
+    } else {
+      setEventFormData((prev) => ({ ...prev, [name]: value }));
+    }
+  };
+
+  const handleAddEventTag = () => {
+    if (eventTagInput && !eventFormData.tags.includes(eventTagInput)) {
+      setEventFormData(prev => ({ ...prev, tags: [...prev.tags, eventTagInput] }));
+      setEventTagInput("");
+    }
+  };
+
+  const handleRemoveEventTag = (tagToRemove) => {
+    setEventFormData(prev => ({
+      ...prev,
+      tags: prev.tags.filter(tag => tag !== tagToRemove)
+    }));
+  };
 
   // Fetch risk assessments
   const fetchRiskAssessments = async () => {
@@ -274,7 +551,6 @@ const RiskAnalysisPage = () => {
     }
   };
 
-  // Fetch single risk by ID
   const fetchRiskById = async (id) => {
     try {
       const response = await api.get(`/risk/${id}`);
@@ -286,7 +562,6 @@ const RiskAnalysisPage = () => {
     }
   };
 
-  // Fetch statistics
   const fetchStats = async () => {
     try {
       const response = await api.get("/risk/stats");
@@ -303,7 +578,6 @@ const RiskAnalysisPage = () => {
     fetchStats();
   }, [pagination.page, filters]);
 
-  // Handle edit risk
   const handleEditRisk = (risk) => {
     setEditingRisk(risk);
     setEditForm({
@@ -315,7 +589,6 @@ const RiskAnalysisPage = () => {
     setShowEditModal(true);
   };
 
-  // Handle update risk
   const handleUpdateRisk = async () => {
     setActionLoading(true);
     try {
@@ -348,7 +621,6 @@ const RiskAnalysisPage = () => {
     }
   };
 
-  // Handle delete risk
   const handleDeleteRisk = async (riskId) => {
     setActionLoading(true);
     try {
@@ -369,7 +641,6 @@ const RiskAnalysisPage = () => {
     }
   };
 
-  // Handle risk analysis with progress simulation
   const handleAnalyzeRisk = async () => {
     if (!analysisForm.name || analysisForm.coordinates.length < 4) {
       setError("Please provide a name and draw a valid polygon on the map (minimum 3 points, and polygon must be closed)");
@@ -382,7 +653,6 @@ const RiskAnalysisPage = () => {
     setAnalysisProgress(0);
     updateProgress("Initializing...", 0);
     
-    // Start progress simulation
     const progressInterval = setInterval(() => {
       setAnalysisProgress(prev => {
         if (prev >= 95) {
@@ -408,7 +678,6 @@ const RiskAnalysisPage = () => {
       setAnalysisProgress(100);
       updateProgress("Analysis complete!", 100);
       
-      // Brief delay to show 100% completion
       await new Promise(resolve => setTimeout(resolve, 500));
       
       if (response.data.success) {
@@ -417,8 +686,6 @@ const RiskAnalysisPage = () => {
         setShowAnalysisModal(false);
         await fetchRiskAssessments();
         await fetchStats();
-        
-        // Auto-show the result modal
         setSelectedRisk(response.data.data);
       } else {
         setError(response.data.error || "Analysis failed");
@@ -433,12 +700,10 @@ const RiskAnalysisPage = () => {
     }
   };
 
-  // Simulate progress updates
   const updateProgress = (step, progressValue) => {
     setAnalysisCurrentStep(step);
     setAnalysisProgress(progressValue);
     
-    // Update step status based on progress
     if (progressValue < 20) {
       setAnalysisStepStatus({
         satellite: progressValue > 5 ? "loading" : "pending",
@@ -496,7 +761,6 @@ const RiskAnalysisPage = () => {
     }
   };
 
-  // Draw polygon on map
   const handleMapClick = (e) => {
     if (!analysisForm.drawing) return;
     
@@ -535,7 +799,6 @@ const RiskAnalysisPage = () => {
     setError("");
   };
 
-  // Get risk level color and badge
   const getRiskConfig = (level) => {
     const config = {
       critical: { color: "text-red-700", bg: "bg-red-50", badge: "error", label: "CRITICAL" },
@@ -546,12 +809,267 @@ const RiskAnalysisPage = () => {
     return config[level] || config.low;
   };
 
-  // Prepare chart data
   const riskDistributionData = stats?.byLevel?.map(item => ({
     name: item._id.toUpperCase(),
     value: item.count,
     color: COLORS[item._id]
   })) || [];
+
+  // Organize Event Modal Component
+  const OrganizeEventModal = () => {
+    if (!showOrganizeEventModal) return null;
+    
+    const eventTypes = [
+      { value: "planting", label: "🌱 Planting Event" },
+      { value: "workshop", label: "📚 Workshop" },
+      { value: "community_garden", label: "🌻 Community Garden" },
+      { value: "tree_planting", label: "🌳 Tree Planting" },
+      { value: "educational", label: "🎓 Educational" }
+    ];
+    
+    return (
+      <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-[70] p-4">
+        <div className="bg-white rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+          <div className="p-6 space-y-6">
+            <div className="flex justify-between items-start">
+              <div>
+                <h2 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
+                  <span>🎯</span>
+                  Organize Intervention Event
+                </h2>
+                <p className="text-slate-600 mt-1">
+                  Create an event to address risks in {organizeEventData?.name}
+                </p>
+              </div>
+              <button
+                onClick={() => setShowOrganizeEventModal(false)}
+                className="text-gray-500 hover:text-gray-700 text-2xl"
+              >
+                ×
+              </button>
+            </div>
+            
+            <div className={`p-4 rounded-lg ${
+              organizeEventData?.riskLevel === 'critical' ? 'bg-red-50 border border-red-200' :
+              organizeEventData?.riskLevel === 'high' ? 'bg-orange-50 border border-orange-200' :
+              'bg-yellow-50 border border-yellow-200'
+            }`}>
+              <div className="flex items-center justify-between mb-2">
+                <span className="font-semibold">Risk Assessment Summary</span>
+                <Badge variant={organizeEventData?.riskLevel === 'critical' ? 'error' : 'warning'}>
+                  {organizeEventData?.riskLevel?.toUpperCase()} RISK
+                </Badge>
+              </div>
+              <div className="text-sm space-y-1">
+                <p><strong>Area:</strong> {organizeEventData?.name}</p>
+                <p><strong>Risk Score:</strong> {organizeEventData?.riskScore}/100</p>
+                <p><strong>Analysis Date:</strong> {new Date(organizeEventData?.analysisDate).toLocaleDateString()}</p>
+              </div>
+            </div>
+            
+            {eventFormError && (
+              <FeedbackMessage tone="error" onDismiss={() => setEventFormError("")}>
+                {eventFormError}
+              </FeedbackMessage>
+            )}
+            {eventFormSuccess && (
+              <FeedbackMessage tone="success" onDismiss={() => setEventFormSuccess("")}>
+                {eventFormSuccess}
+              </FeedbackMessage>
+            )}
+            
+            <form onSubmit={handleSubmitRiskEvent} className="space-y-4">
+              <div>
+                <label className="label" htmlFor="event-title">Event Title *</label>
+                <input
+                  id="event-title"
+                  name="title"
+                  type="text"
+                  required
+                  className="input"
+                  value={eventFormData.title}
+                  onChange={handleEventFormChange}
+                  placeholder="Enter event title"
+                />
+              </div>
+              
+              <div>
+                <label className="label" htmlFor="event-description">Description *</label>
+                <textarea
+                  id="event-description"
+                  name="description"
+                  required
+                  rows="6"
+                  className="input font-mono text-sm"
+                  value={eventFormData.description}
+                  onChange={handleEventFormChange}
+                  placeholder="Describe the event..."
+                />
+              </div>
+              
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="label" htmlFor="event-type">Event Type *</label>
+                  <select
+                    id="event-type"
+                    name="eventType"
+                    required
+                    className="input"
+                    value={eventFormData.eventType}
+                    onChange={handleEventFormChange}
+                  >
+                    {eventTypes.map(type => (
+                      <option key={type.value} value={type.value}>{type.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="label" htmlFor="max-participants">Max Participants</label>
+                  <input
+                    id="max-participants"
+                    name="maxParticipants"
+                    type="number"
+                    min="1"
+                    className="input"
+                    value={eventFormData.maxParticipants}
+                    onChange={handleEventFormChange}
+                  />
+                </div>
+              </div>
+              
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="label" htmlFor="start-date">Start Date & Time *</label>
+                  <input
+                    id="start-date"
+                    name="startDate"
+                    type="datetime-local"
+                    required
+                    className="input"
+                    value={eventFormData.startDate}
+                    onChange={handleEventFormChange}
+                  />
+                </div>
+                <div>
+                  <label className="label" htmlFor="end-date">End Date & Time *</label>
+                  <input
+                    id="end-date"
+                    name="endDate"
+                    type="datetime-local"
+                    required
+                    className="input"
+                    value={eventFormData.endDate}
+                    onChange={handleEventFormChange}
+                  />
+                </div>
+              </div>
+              
+              <div className="space-y-3">
+                <h3 className="font-semibold text-slate-900">Location (Near Risk Area)</h3>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div>
+                    <label className="label" htmlFor="location-address">Address</label>
+                    <input
+                      id="location-address"
+                      name="location.address"
+                      type="text"
+                      className="input"
+                      value={eventFormData.location.address}
+                      onChange={handleEventFormChange}
+                      placeholder="Street address"
+                    />
+                  </div>
+                  <div>
+                    <label className="label" htmlFor="location-city">City *</label>
+                    <input
+                      id="location-city"
+                      name="location.city"
+                      type="text"
+                      required
+                      className="input"
+                      value={eventFormData.location.city}
+                      onChange={handleEventFormChange}
+                      placeholder="City"
+                    />
+                  </div>
+                </div>
+                {eventFormData.location.coordinates.lat && eventFormData.location.coordinates.lng && (
+                  <div className="text-xs text-green-600 bg-green-50 p-2 rounded">
+                    📍 Coordinates set: {eventFormData.location.coordinates.lat.toFixed(4)}, {eventFormData.location.coordinates.lng.toFixed(4)}
+                    <br />
+                    <span className="text-gray-500">Location is near the risk assessment area</span>
+                  </div>
+                )}
+              </div>
+              
+              <div>
+                <label className="label" htmlFor="event-tags">Tags</label>
+                <div className="flex gap-2">
+                  <input
+                    id="event-tags"
+                    type="text"
+                    className="input flex-1"
+                    value={eventTagInput}
+                    onChange={(e) => setEventTagInput(e.target.value)}
+                    onKeyPress={(e) => e.key === "Enter" && (e.preventDefault(), handleAddEventTag())}
+                    placeholder="Add tags (e.g., urgent, reforestation)"
+                  />
+                  <button type="button" onClick={handleAddEventTag} className="btn-secondary">
+                    Add
+                  </button>
+                </div>
+                {eventFormData.tags.length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {eventFormData.tags.map((tag) => (
+                      <span key={tag} className="inline-flex items-center gap-1 px-2 py-1 bg-slate-100 rounded text-sm">
+                        #{tag}
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveEventTag(tag)}
+                          className="text-slate-500 hover:text-red-500"
+                        >
+                          ×
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+              
+              <div className="flex items-center">
+                <label className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={eventFormData.reminders}
+                    onChange={(e) => setEventFormData(prev => ({ ...prev, reminders: e.target.checked }))}
+                    className="rounded border-slate-300"
+                  />
+                  <span className="text-sm text-slate-700">Send email reminders to participants</span>
+                </label>
+              </div>
+              
+              <div className="flex gap-3 pt-4 border-t">
+                <button
+                  type="button"
+                  onClick={() => setShowOrganizeEventModal(false)}
+                  className="btn-secondary flex-1"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="btn-primary flex-1"
+                  disabled={eventFormLoading}
+                >
+                  {eventFormLoading ? "Creating Event..." : "Create Event"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   // Edit Risk Modal Component
   const EditRiskModal = () => {
@@ -691,7 +1209,6 @@ const RiskAnalysisPage = () => {
       <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
         <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
           <div className="p-6 space-y-6">
-            {/* Header */}
             <div className="flex justify-between items-start">
               <div>
                 <h2 className="text-2xl font-bold text-slate-900">{selectedRisk.name}</h2>
@@ -707,6 +1224,15 @@ const RiskAnalysisPage = () => {
               <div className="flex gap-2">
                 {isAdmin && (
                   <>
+                    <button
+                      onClick={() => {
+                        setSelectedRisk(null);
+                        handleOrganizeEvent(selectedRisk);
+                      }}
+                      className="px-3 py-1 text-sm bg-green-500 text-white rounded hover:bg-green-600 transition flex items-center gap-1"
+                    >
+                      <span>🎯</span> Organize Event
+                    </button>
                     <button
                       onClick={() => {
                         setSelectedRisk(null);
@@ -736,9 +1262,7 @@ const RiskAnalysisPage = () => {
               </div>
             </div>
 
-            {/* Risk Factors and Satellite Data Grid */}
             <div className="grid gap-6 lg:grid-cols-2">
-              {/* Risk Factors */}
               <div>
                 <h3 className="text-lg font-semibold text-slate-900 mb-3">Risk Factors</h3>
                 <div className="space-y-3">
@@ -748,10 +1272,7 @@ const RiskAnalysisPage = () => {
                       <span className="font-medium">{selectedRisk.factors?.treeCoverLoss || 0}%</span>
                     </div>
                     <div className="h-2 bg-slate-200 rounded-full overflow-hidden">
-                      <div 
-                        className="h-full bg-red-500 rounded-full transition-all" 
-                        style={{ width: `${selectedRisk.factors?.treeCoverLoss || 0}%` }} 
-                      />
+                      <div className="h-full bg-red-500 rounded-full transition-all" style={{ width: `${selectedRisk.factors?.treeCoverLoss || 0}%` }} />
                     </div>
                   </div>
                   <div>
@@ -760,10 +1281,7 @@ const RiskAnalysisPage = () => {
                       <span className="font-medium">{selectedRisk.factors?.degradationRate || 0}%</span>
                     </div>
                     <div className="h-2 bg-slate-200 rounded-full overflow-hidden">
-                      <div 
-                        className="h-full bg-orange-500 rounded-full transition-all" 
-                        style={{ width: `${selectedRisk.factors?.degradationRate || 0}%` }} 
-                      />
+                      <div className="h-full bg-orange-500 rounded-full transition-all" style={{ width: `${selectedRisk.factors?.degradationRate || 0}%` }} />
                     </div>
                   </div>
                   <div>
@@ -772,10 +1290,7 @@ const RiskAnalysisPage = () => {
                       <span className="font-medium">{selectedRisk.factors?.fireRisk || 0}%</span>
                     </div>
                     <div className="h-2 bg-slate-200 rounded-full overflow-hidden">
-                      <div 
-                        className="h-full bg-yellow-500 rounded-full transition-all" 
-                        style={{ width: `${selectedRisk.factors?.fireRisk || 0}%` }} 
-                      />
+                      <div className="h-full bg-yellow-500 rounded-full transition-all" style={{ width: `${selectedRisk.factors?.fireRisk || 0}%` }} />
                     </div>
                   </div>
                   <div>
@@ -784,10 +1299,7 @@ const RiskAnalysisPage = () => {
                       <span className="font-medium">{selectedRisk.factors?.encroachmentRisk || 0}%</span>
                     </div>
                     <div className="h-2 bg-slate-200 rounded-full overflow-hidden">
-                      <div 
-                        className="h-full bg-blue-500 rounded-full transition-all" 
-                        style={{ width: `${selectedRisk.factors?.encroachmentRisk || 0}%` }} 
-                      />
+                      <div className="h-full bg-blue-500 rounded-full transition-all" style={{ width: `${selectedRisk.factors?.encroachmentRisk || 0}%` }} />
                     </div>
                   </div>
                   <div>
@@ -796,16 +1308,12 @@ const RiskAnalysisPage = () => {
                       <span className="font-medium">{selectedRisk.factors?.illegalLoggingProbability || 0}%</span>
                     </div>
                     <div className="h-2 bg-slate-200 rounded-full overflow-hidden">
-                      <div 
-                        className="h-full bg-purple-500 rounded-full transition-all" 
-                        style={{ width: `${selectedRisk.factors?.illegalLoggingProbability || 0}%` }} 
-                      />
+                      <div className="h-full bg-purple-500 rounded-full transition-all" style={{ width: `${selectedRisk.factors?.illegalLoggingProbability || 0}%` }} />
                     </div>
                   </div>
                 </div>
               </div>
 
-              {/* Satellite Data */}
               <div>
                 <h3 className="text-lg font-semibold text-slate-900 mb-3">Satellite Data</h3>
                 <div className="bg-slate-50 rounded-lg p-4 space-y-2">
@@ -835,7 +1343,6 @@ const RiskAnalysisPage = () => {
                   </div>
                 </div>
 
-                {/* Historical Comparison */}
                 {selectedRisk.satelliteData?.historicalComparison && (
                   <div className="mt-4">
                     <h4 className="font-semibold text-slate-900 mb-2">Historical Comparison</h4>
@@ -860,7 +1367,6 @@ const RiskAnalysisPage = () => {
               </div>
             </div>
 
-            {/* Required Actions */}
             {selectedRisk.actions?.length > 0 && (
               <div>
                 <h3 className="text-lg font-semibold text-slate-900 mb-3">Required Actions</h3>
@@ -884,7 +1390,6 @@ const RiskAnalysisPage = () => {
               </div>
             )}
 
-            {/* Metadata */}
             <div className="border-t pt-4">
               <div className="grid gap-2 text-sm text-slate-600">
                 <div className="flex justify-between">
@@ -925,7 +1430,6 @@ const RiskAnalysisPage = () => {
 
   return (
     <div className="space-y-6">
-      {/* Loading Modal */}
       {showLoadingModal && (
         <AnalysisLoadingModal 
           progress={analysisProgress}
@@ -934,16 +1438,11 @@ const RiskAnalysisPage = () => {
         />
       )}
 
-      {/* Edit Modal */}
       <EditRiskModal />
-
-      {/* Delete Confirmation Modal */}
       <DeleteConfirmModal />
-
-      {/* Risk Details Modal */}
       <RiskDetailsModal />
+      <OrganizeEventModal />
 
-      {/* Header */}
       <Card className="border-green-100 bg-gradient-to-r from-green-50 to-emerald-50">
         <SectionHeader
           title="Forest Risk Analysis Dashboard"
@@ -968,7 +1467,6 @@ const RiskAnalysisPage = () => {
         />
       </Card>
 
-      {/* Stats Cards */}
       {stats && (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <Card className="border-l-4 border-l-red-500">
@@ -1023,7 +1521,6 @@ const RiskAnalysisPage = () => {
         </div>
       )}
 
-      {/* Charts Section */}
       {riskDistributionData.length > 0 && (
         <div className="grid gap-4 lg:grid-cols-2">
           <Card>
@@ -1102,7 +1599,6 @@ const RiskAnalysisPage = () => {
         </div>
       )}
 
-      {/* Filters */}
       <Card>
         <div className="space-y-4">
           <h3 className="text-md font-semibold text-slate-900">Filters</h3>
@@ -1173,7 +1669,6 @@ const RiskAnalysisPage = () => {
         </div>
       </Card>
 
-      {/* Risk Assessments Grid */}
       {loading && <LoadingSpinner label="Loading risk assessments..." />}
       
       {error && (
@@ -1183,106 +1678,112 @@ const RiskAnalysisPage = () => {
       )}
 
       {!loading && !error && riskAssessments.length > 0 && (
-  <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-    {riskAssessments.map((risk) => {
-      const riskConfig = getRiskConfig(risk.riskLevel);
-      
-      return (
-        <Card
-          key={risk._id}
-          className={`cursor-pointer transition hover:-translate-y-0.5 hover:shadow-card border-l-4 relative ${
-            risk.riskLevel === "critical" ? "border-l-red-500" :
-            risk.riskLevel === "high" ? "border-l-orange-500" :
-            risk.riskLevel === "medium" ? "border-l-yellow-500" :
-            "border-l-green-500"
-          }`}
-          onClick={() => setSelectedRisk(risk)}
-        >
-          <div className="space-y-3">
-            {/* Header with Title and Risk Score - Restructured to avoid overlap */}
-            <div className="flex items-start justify-between">
-              <div className="flex-1 min-w-0">
-                <h3 className="text-lg font-semibold text-slate-900 truncate pr-2">{risk.name}</h3>
-                <div className="mt-1">
-                  <Badge variant={riskConfig.badge}>{riskConfig.label}</Badge>
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                {/* Risk Score - Now clearly visible */}
-                <div className="text-2xl font-bold shrink-0" style={{ color: COLORS[risk.riskLevel] }}>
-                  {risk.riskScore}
-                </div>
-                {/* Action Buttons - Moved next to score */}
-                {isAdmin && (
-                  <div className="flex gap-1 shrink-0">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleEditRisk(risk);
-                      }}
-                      className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded transition"
-                      title="Edit"
-                    >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                      </svg>
-                    </button>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setDeleteConfirm(risk);
-                      }}
-                      className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition"
-                      title="Delete"
-                    >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                      </svg>
-                    </button>
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          {riskAssessments.map((risk) => {
+            const riskConfig = getRiskConfig(risk.riskLevel);
+            
+            return (
+              <Card
+                key={risk._id}
+                className={`cursor-pointer transition hover:-translate-y-0.5 hover:shadow-card border-l-4 relative ${
+                  risk.riskLevel === "critical" ? "border-l-red-500" :
+                  risk.riskLevel === "high" ? "border-l-orange-500" :
+                  risk.riskLevel === "medium" ? "border-l-yellow-500" :
+                  "border-l-green-500"
+                }`}
+                onClick={() => setSelectedRisk(risk)}
+              >
+                <div className="space-y-3">
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1 min-w-0">
+                      <h3 className="text-lg font-semibold text-slate-900 truncate pr-2">{risk.name}</h3>
+                      <div className="mt-1">
+                        <Badge variant={riskConfig.badge}>{riskConfig.label}</Badge>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="text-2xl font-bold shrink-0" style={{ color: COLORS[risk.riskLevel] }}>
+                        {risk.riskScore}
+                      </div>
+                      {isAdmin && (
+                        <div className="flex gap-1 shrink-0">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleOrganizeEvent(risk);
+                            }}
+                            className="p-1.5 text-slate-400 hover:text-green-600 hover:bg-green-50 rounded transition"
+                            title="Organize Event"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                            </svg>
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleEditRisk(risk);
+                            }}
+                            className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded transition"
+                            title="Edit"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                            </svg>
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setDeleteConfirm(risk);
+                            }}
+                            className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition"
+                            title="Delete"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   </div>
-                )}
-              </div>
-            </div>
 
-            {/* Risk Factors Grid */}
-            <div className="grid grid-cols-2 gap-2 text-sm">
-              <div className="flex items-center gap-1">
-                <span className="text-slate-500">🌳 Tree Cover:</span>
-                <span className="font-medium">{risk.satelliteData?.treeCoverPercentage || 0}%</span>
-              </div>
-              <div className="flex items-center gap-1">
-                <span className="text-slate-500">🔥 Fire Risk:</span>
-                <span className="font-medium">{risk.factors?.fireRisk || 0}%</span>
-              </div>
-              <div className="flex items-center gap-1">
-                <span className="text-slate-500">📉 Deforestation:</span>
-                <span className="font-medium">{risk.factors?.treeCoverLoss || 0}%</span>
-              </div>
-              <div className="flex items-center gap-1">
-                <span className="text-slate-500">🏠 Encroachment:</span>
-                <span className="font-medium">{risk.factors?.encroachmentRisk || 0}%</span>
-              </div>
-            </div>
+                  <div className="grid grid-cols-2 gap-2 text-sm">
+                    <div className="flex items-center gap-1">
+                      <span className="text-slate-500">🌳 Tree Cover:</span>
+                      <span className="font-medium">{risk.satelliteData?.treeCoverPercentage || 0}%</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <span className="text-slate-500">🔥 Fire Risk:</span>
+                      <span className="font-medium">{risk.factors?.fireRisk || 0}%</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <span className="text-slate-500">📉 Deforestation:</span>
+                      <span className="font-medium">{risk.factors?.treeCoverLoss || 0}%</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <span className="text-slate-500">🏠 Encroachment:</span>
+                      <span className="font-medium">{risk.factors?.encroachmentRisk || 0}%</span>
+                    </div>
+                  </div>
 
-            {/* Actions Indicator */}
-            {risk.actions?.length > 0 && (
-              <div className="pt-2 border-t">
-                <div className="flex items-center gap-1 text-xs text-slate-500">
-                  <span>⚠️ {risk.actions.length} action(s) required</span>
+                  {risk.actions?.length > 0 && (
+                    <div className="pt-2 border-t">
+                      <div className="flex items-center gap-1 text-xs text-slate-500">
+                        <span>⚠️ {risk.actions.length} action(s) required</span>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="text-xs text-slate-400">
+                    Analyzed: {new Date(risk.analysisDate).toLocaleDateString()}
+                  </div>
                 </div>
-              </div>
-            )}
-
-            {/* Analysis Date */}
-            <div className="text-xs text-slate-400">
-              Analyzed: {new Date(risk.analysisDate).toLocaleDateString()}
-            </div>
-          </div>
-        </Card>
-      );
-    })}
-  </div>
-)}
+              </Card>
+            );
+          })}
+        </div>
+      )}
 
       {!loading && !error && riskAssessments.length === 0 && (
         <EmptyState
@@ -1304,7 +1805,6 @@ const RiskAnalysisPage = () => {
         />
       )}
 
-      {/* Pagination */}
       {pagination.pages > 1 && (
         <div className="flex items-center justify-between">
           <div className="text-sm text-slate-600">
@@ -1348,7 +1848,6 @@ const RiskAnalysisPage = () => {
               </div>
 
               {analysisResult ? (
-                // Analysis Results View
                 <div className="space-y-4">
                   <div className={`p-4 rounded-lg ${
                     analysisResult.riskLevel === "critical" ? "bg-red-50" :
@@ -1431,7 +1930,6 @@ const RiskAnalysisPage = () => {
                   </div>
                 </div>
               ) : (
-                // Analysis Form
                 <div className="space-y-4">
                   <div>
                     <label className="label" htmlFor="area-name">Area Name *</label>
@@ -1473,21 +1971,13 @@ const RiskAnalysisPage = () => {
                     
                     <div className="mt-3 flex gap-2 flex-wrap">
                       {!analysisForm.drawing && analysisForm.coordinates.length === 0 && (
-                        <button
-                          type="button"
-                          onClick={startDrawing}
-                          className="btn-primary"
-                        >
+                        <button type="button" onClick={startDrawing} className="btn-primary">
                           ✏️ Start Drawing
                         </button>
                       )}
                       {analysisForm.drawing && (
                         <>
-                          <button
-                            type="button"
-                            onClick={() => setAnalysisForm(prev => ({ ...prev, drawing: false }))}
-                            className="btn-secondary"
-                          >
+                          <button type="button" onClick={() => setAnalysisForm(prev => ({ ...prev, drawing: false }))} className="btn-secondary">
                             Cancel Drawing
                           </button>
                           <button
@@ -1502,18 +1992,10 @@ const RiskAnalysisPage = () => {
                       )}
                       {analysisForm.coordinates.length > 0 && !analysisForm.drawing && (
                         <>
-                          <button
-                            type="button"
-                            onClick={startDrawing}
-                            className="btn-secondary"
-                          >
+                          <button type="button" onClick={startDrawing} className="btn-secondary">
                             ✏️ Continue Drawing
                           </button>
-                          <button
-                            type="button"
-                            onClick={clearPolygon}
-                            className="btn-secondary text-red-600 hover:text-red-700"
-                          >
+                          <button type="button" onClick={clearPolygon} className="btn-secondary text-red-600 hover:text-red-700">
                             🗑️ Clear Polygon
                           </button>
                         </>

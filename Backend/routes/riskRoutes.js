@@ -22,5 +22,6 @@ router.get('/', protect, riskController.getAllRisks);
 router.get('/:id', protect, riskController.getRiskById);
 router.put('/update/:id', protect, isAdmin, riskController.updateRisk);
 router.delete('/:id', protect, isAdmin, riskController.deleteRisk);
+router.post('/:riskId/link-event', protect, isAdmin, riskController.linkEventToRisk);
 
 module.exports = router;

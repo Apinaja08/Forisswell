@@ -298,3 +298,38 @@ exports.getRiskStats = async (req, res) => {
     });
   }
 };
+
+exports.linkEventToRisk = async (req, res) => {
+  try {
+    const { riskId } = req.params;
+    const { eventId } = req.body;
+    
+    const risk = await Risk.findById(riskId);
+    if (!risk) {
+      return res.status(404).json({
+        success: false,
+        error: 'Risk assessment not found'
+      });
+    }
+    
+    if (!risk.relatedEvents) {
+      risk.relatedEvents = [];
+    }
+    
+    if (!risk.relatedEvents.includes(eventId)) {
+      risk.relatedEvents.push(eventId);
+      await risk.save();
+    }
+    
+    res.json({
+      success: true,
+      data: risk
+    });
+  } catch (error) {
+    logger.error('Link event to risk error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to link event to risk'
+    });
+  }
+};
