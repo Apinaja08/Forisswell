@@ -38,7 +38,7 @@ exports.createProfile = asyncHandler(async (req, res, next) => {
   if (!address.formatted) {
     try {
       const [longitude, latitude] = location.coordinates;
-      address = await reverseGeocodingService.reverseGeocode(latitude, longitude);
+      address = await reverseGeocodingService.reverseGeocode(longitude, latitude);
     } catch (error) {
       console.log("Reverse geocoding failed, continuing without address");
     }
@@ -119,7 +119,7 @@ exports.updateProfile = asyncHandler(async (req, res, next) => {
     if (!address.formatted && location.coordinates.length === 2) {
       try {
         const [longitude, latitude] = location.coordinates;
-        address = await reverseGeocodingService.reverseGeocode(latitude, longitude);
+        address = await reverseGeocodingService.reverseGeocode(longitude, latitude);
       } catch (error) {
         console.log("Reverse geocoding failed");
       }
@@ -210,7 +210,7 @@ exports.updateLocation = asyncHandler(async (req, res, next) => {
   let address = {};
   try {
     const [longitude, latitude] = coordinates;
-    address = await reverseGeocodingService.reverseGeocode(latitude, longitude);
+    address = await reverseGeocodingService.reverseGeocode(longitude, latitude);
   } catch (error) {
     console.log("Reverse geocoding failed");
   }

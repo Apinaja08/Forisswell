@@ -2,6 +2,12 @@ const axios = require("axios");
 
 const DEFAULT_BASE_URL = "https://nominatim.openstreetmap.org";
 
+const normalizeBaseUrl = (input) => {
+  const raw = (input || DEFAULT_BASE_URL).toString().trim();
+  const withProtocol = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
+  return withProtocol.replace(/\/+$/, "");
+};
+
 const firstNonEmptyString = (...values) => {
   for (const value of values) {
     if (typeof value === "string" && value.trim()) return value.trim();
@@ -18,10 +24,7 @@ const firstNonEmptyString = (...values) => {
  * @returns {Promise<{formatted?: string, city?: string, district?: string, country?: string} | null>}
  */
 const reverseGeocode = async (lon, lat) => {
-  const baseUrl = (process.env.NOMINATIM_BASE_URL || DEFAULT_BASE_URL).replace(
-    /\/+$/,
-    ""
-  );
+  const baseUrl = normalizeBaseUrl(process.env.NOMINATIM_BASE_URL || DEFAULT_BASE_URL);
 
   const userAgent =
     process.env.NOMINATIM_USER_AGENT ||

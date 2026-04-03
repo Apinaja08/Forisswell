@@ -130,7 +130,6 @@ const volunteerProfileSchema = new mongoose.Schema(
 
 // Indexes for efficient queries
 volunteerProfileSchema.index({ location: "2dsphere" });
-volunteerProfileSchema.index({ user: 1 });
 volunteerProfileSchema.index({ status: 1, isAvailable: 1 });
 
 // Virtual to populate user details

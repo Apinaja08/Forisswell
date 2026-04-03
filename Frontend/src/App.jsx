@@ -11,6 +11,7 @@ import ProfilePage from "./pages/ProfilePage";
 import ProfileEditPage from "./pages/ProfileEditPage";
 import NotFoundPage from "./pages/NotFoundPage";
 import LandingPage from "./pages/LandingPage";
+import RiskAnalysisPage from "./pages/RiskAnalysisPage";
 import AdminLayout from "./layouts/AdminLayout";
 import AdminDashboard from "./pages/admin/AdminDashboard";
 import AdminAlertsPage from "./pages/admin/AdminAlertsPage";
@@ -110,6 +111,16 @@ function App() {
               <ProtectedRoute requiredRole="admin">
                 <AdminLayout>
                   <AdminAlertsPage />
+                </AdminLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/risk-analysis"
+            element={
+              <ProtectedRoute requiredRole="admin">
+                <AdminLayout>
+                  <RiskAnalysisPage />
                 </AdminLayout>
               </ProtectedRoute>
             }
