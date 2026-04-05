@@ -106,12 +106,13 @@ function ProfileEditPage() {
     fetchVolunteerProfile();
   }, [user?.role, navigate]);
 
-  const handleMapCoordinateSelect = (lat, lon) => {
+  const handleMapCoordinateSelect = ({ lat, lon }) => {
     setVolunteerForm((prev) => ({
       ...prev,
-      latitude: lat.toFixed(6),
-      longitude: lon.toFixed(6),
+      latitude: lat.toFixed ? lat.toFixed(6) : lat,
+      longitude: lon.toFixed ? lon.toFixed(6) : lon,
     }));
+    setShowMapPicker(false);
   };
 
   const handleCurrentLocationForVolunteer = () => {

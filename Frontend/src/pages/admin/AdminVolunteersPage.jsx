@@ -4,6 +4,8 @@ import FeedbackMessage from "../../components/ui/FeedbackMessage";
 import Card from "../../components/ui/Card";
 import SectionHeader from "../../components/ui/SectionHeader";
 
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:5001/api";
+
 function AdminVolunteersPage() {
   const [volunteers, setVolunteers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -28,7 +30,7 @@ function AdminVolunteersPage() {
 
       // Since the backend might not have a dedicated volunteers list endpoint,
       // we'll get volunteers from the leaderboard as a workaround
-      const res = await fetch("http://localhost:5000/api/alerts/leaderboard?limit=100", {
+      const res = await fetch(`${API_BASE_URL}/alerts/leaderboard?limit=100`, {
         headers: {
           Authorization: `Bearer ${localStorage.getItem("forisswell_token")}`,  
         },
@@ -60,10 +62,10 @@ function AdminVolunteersPage() {
 
   const handleStatusUpdate = async (volunteerId, newStatus) => {
     try {
-      const res = await fetch("http://localhost:5000/api/volunteers/status", {
+      const res = await fetch(`${API_BASE_URL}/volunteers/status`, {
         method: "PATCH",
         headers: {
-          Authorization: `Bearer ${localStorage.getItem("token")}`,
+          Authorization: `Bearer ${localStorage.getItem("forisswell_token")}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
@@ -237,10 +239,10 @@ function AdminVolunteersPage() {
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-xl font-bold">Volunteer Profile</h2>
               <button
-                className="text-slate-400 hover:text-slate-600"
+                className="btn-secondary text-sm"
                 onClick={() => setShowModal(false)}
               >
-                ✕
+                Close
               </button>
             </div>
 

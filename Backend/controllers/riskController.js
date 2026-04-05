@@ -21,6 +21,72 @@ const ensureCorrectCoordinateFormat = (coordinates) => {
   return coordinates;
 };
 
+exports.getAllRisks = async (req, res) => {
+  try {
+    const {
+      page = 1,
+      limit = 12,
+      sortBy = 'analysisDate',
+      order = 'desc',
+      riskLevel,
+      region,
+      startDate,
+      endDate
+    } = req.query;
+
+    // Build query
+    const query = {};
+    
+    if (riskLevel) {
+      query.riskLevel = riskLevel;
+    }
+    
+    if (region) {
+      query['metadata.region'] = { $regex: region, $options: 'i' };
+    }
+    
+    if (startDate || endDate) {
+      query.analysisDate = {};
+      if (startDate) {
+        query.analysisDate.$gte = new Date(startDate);
+      }
+      if (endDate) {
+        query.analysisDate.$lte = new Date(endDate);
+      }
+    }
+
+    const options = {
+      page: parseInt(page),
+      limit: parseInt(limit),
+      sort: { [sortBy]: order === 'desc' ? -1 : 1 }
+    };
+
+    const risks = await Risk.find(query)
+      .sort(options.sort)
+      .skip((options.page - 1) * options.limit)
+      .limit(options.limit);
+
+    const total = await Risk.countDocuments(query);
+
+    res.json({
+      success: true,
+      data: risks,
+      pagination: {
+        page: options.page,
+        limit: options.limit,
+        total,
+        pages: Math.ceil(total / options.limit)
+      }
+    });
+  } catch (error) {
+    logger.error('Get all risks error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch risks'
+    });
+  }
+};
+
 exports.analyzeRisk = async (req, res) => {
   try {
     let { polygon } = req.body;
@@ -229,6 +295,41 @@ exports.getRiskStats = async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Failed to fetch statistics'
+    });
+  }
+};
+
+exports.linkEventToRisk = async (req, res) => {
+  try {
+    const { riskId } = req.params;
+    const { eventId } = req.body;
+    
+    const risk = await Risk.findById(riskId);
+    if (!risk) {
+      return res.status(404).json({
+        success: false,
+        error: 'Risk assessment not found'
+      });
+    }
+    
+    if (!risk.relatedEvents) {
+      risk.relatedEvents = [];
+    }
+    
+    if (!risk.relatedEvents.includes(eventId)) {
+      risk.relatedEvents.push(eventId);
+      await risk.save();
+    }
+    
+    res.json({
+      success: true,
+      data: risk
+    });
+  } catch (error) {
+    logger.error('Link event to risk error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to link event to risk'
     });
   }
 };

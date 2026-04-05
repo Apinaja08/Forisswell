@@ -236,80 +236,99 @@ function AlertsPage() {
   const completedAlerts = alerts.filter((alert) => alert.status === "completed");
 
   return (
-    <section className="space-y-6">
-      <Card className="border-leaf-100 bg-white/90">
-        <SectionHeader
-          title="🚨 Alert System"
-          subtitle="Real-time weather-based tree care alerts with live updates"
-          right={<Badge variant="warning">{alerts.length} My Alerts</Badge>}
-        />
-      </Card>
+    <section className="space-y-4">
+      {/* Beautiful Gradient Header */}
+      <div className="relative overflow-hidden rounded-3xl shadow-2xl bg-gradient-to-r from-red-600 to-orange-500">
+        {/* Decorative elements */}
+        <div className="absolute -right-24 -top-24 h-64 w-64 rounded-full opacity-20 bg-white" />
+        <div className="absolute -left-12 -bottom-12 h-48 w-48 rounded-full opacity-10 bg-white" />
+        
+        <div className="relative px-6 py-8 md:px-8 md:py-10">
+          <div className="max-w-3xl">
+            <div className="mb-2">
+              <Badge variant="danger" className="px-3 py-1 text-xs">
+                🚨 LIVE ALERTS
+              </Badge>
+            </div>
+            <h1 className="text-3xl md:text-4xl font-bold text-white mb-2">
+              Alert Management System
+            </h1>
+            <p className="text-red-100">
+              Real-time weather-based tree care alerts with instant notifications and live updates
+            </p>
+          </div>
+        </div>
+      </div>
 
       {/* Profile Completeness Check for Volunteers */}
       {user?.role === "volunteer" && !checkingProfile && !isVolunteerProfileComplete(volunteerProfile) && (
-        <Card className="border-orange-200 bg-orange-50">
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <h3 className="font-semibold text-orange-900">Complete Your Profile</h3>
-              <p className="mt-1 text-sm text-orange-700">
-                Your volunteer profile is incomplete. Complete your profile to accept and view alerts.
-              </p>
+        <Card className="border-0 overflow-hidden bg-gradient-to-r from-orange-50 to-red-50 shadow-lg">
+          <div className="relative">
+            <div className="absolute -right-16 -top-16 h-40 w-40 rounded-full bg-orange-200 opacity-10" />
+            <div className="relative flex items-center justify-between gap-4 p-4">
+              <div className="flex-1">
+                <h3 className="font-bold text-orange-900 text-lg">⚠️ Complete Your Profile</h3>
+                <p className="mt-1 text-sm text-orange-700">
+                  Your volunteer profile is incomplete. Add your skills, location, and emergency contact to accept alerts.
+                </p>
+              </div>
+              <button
+                onClick={() => navigate("/profile")}
+                className="shrink-0 rounded-lg bg-gradient-to-r from-orange-600 to-red-600 hover:from-orange-700 hover:to-red-700 text-white px-4 py-2 font-semibold transition-all hover:shadow-lg"
+              >
+                Update Profile →
+              </button>
             </div>
-            <button
-              onClick={() => navigate("/profile")}
-              className="btn-primary shrink-0"
-            >
-              Update Profile
-            </button>
           </div>
         </Card>
       )}
 
       {/* Tab Navigation */}
-      <div className="flex gap-2 border-b border-slate-200">
-        <button
-          onClick={() => setActiveTab("my-alerts")}
-          className={`px-4 py-2 font-medium transition ${
-            activeTab === "my-alerts"
-              ? "border-b-2 border-green-600 text-green-600"
-              : "text-slate-600 hover:text-slate-900"
-          }`}
-        >
-          📋 My Alerts ({alerts.filter(a => a.status === "completed").length})
-        </button>
-        <button
-          onClick={() => setActiveTab("ongoing")}
-          className={`px-4 py-2 font-medium transition ${
-            activeTab === "ongoing"
-              ? "border-b-2 border-orange-600 text-orange-600"
-              : "text-slate-600 hover:text-slate-900"
-          }`}
-        >
-          ⚡ Ongoing Process ({ongoingAlerts.length})
-        </button>
-        <button
-          onClick={() => {
-            // If volunteer with incomplete profile tries to access nearby alerts
-            if (user?.role === "volunteer" && !isVolunteerProfileComplete(volunteerProfile)) {
-              navigate("/profile");
-            } else {
-              setActiveTab("nearby");
+      <Card className="border-0 shadow-lg overflow-hidden">
+        <div className="flex gap-0.5 bg-slate-100 rounded-lg p-1">
+          <button
+            onClick={() => setActiveTab("my-alerts")}
+            className={`flex-1 px-4 py-2 rounded-lg font-semibold text-sm transition-all duration-200 ${
+              activeTab === "my-alerts"
+                ? "bg-gradient-to-r from-green-600 to-green-500 text-white shadow-lg"
+                : "text-slate-600 hover:text-slate-900 hover:bg-white/50"
+            }`}
+          >
+            📋 Completed ({alerts.filter(a => a.status === "completed").length})
+          </button>
+          <button
+            onClick={() => setActiveTab("ongoing")}
+            className={`flex-1 px-4 py-2 rounded-lg font-semibold text-sm transition-all duration-200 ${
+              activeTab === "ongoing"
+                ? "bg-gradient-to-r from-orange-600 to-orange-500 text-white shadow-lg"
+                : "text-slate-600 hover:text-slate-900 hover:bg-white/50"
+            }`}
+          >
+            ⚡ Ongoing ({ongoingAlerts.length})
+          </button>
+          <button
+            onClick={() => {
+              if (user?.role === "volunteer" && !isVolunteerProfileComplete(volunteerProfile)) {
+                navigate("/profile");
+              } else {
+                setActiveTab("nearby");
+              }
+            }}
+            className={`flex-1 px-4 py-2 rounded-lg font-semibold text-sm transition-all duration-200 ${
+              activeTab === "nearby"
+                ? "bg-gradient-to-r from-blue-600 to-blue-500 text-white shadow-lg"
+                : "text-slate-600 hover:text-slate-900 hover:bg-white/50"
+            }`}
+            title={
+              user?.role === "volunteer" && !isVolunteerProfileComplete(volunteerProfile)
+                ? "Complete your profile first"
+                : "View nearby available alerts"
             }
-          }}
-          className={`px-4 py-2 font-medium transition ${
-            activeTab === "nearby"
-              ? "border-b-2 border-blue-600 text-blue-600"
-              : "text-slate-600 hover:text-slate-900"
-          }`}
-          title={
-            user?.role === "volunteer" && !isVolunteerProfileComplete(volunteerProfile)
-              ? "Complete your profile first"
-              : "View nearby available alerts"
-          }
-        >
-          📍 Nearby Alerts ({nearbyAlerts.length})
-        </button>
-      </div>
+          >
+            📍 Nearby ({nearbyAlerts.length})
+          </button>
+        </div>
+      </Card>
 
       {loading ? <LoadingSpinner label="Loading alerts..." /> : null}
       {error ? <FeedbackMessage tone="error">{error}</FeedbackMessage> : null}
@@ -346,7 +365,7 @@ function AlertsPage() {
           }
 
           return displayAlerts.length > 0 ? (
-            <div className="grid gap-4 lg:grid-cols-2">
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
               {displayAlerts.map((alert) => (
                 <AlertCard
                   key={alert._id || alert.id}

@@ -68,7 +68,7 @@ function AdminSettingsPage() {
       const data = await response.json();
 
       if (response.ok) {
-        setSuccess(`✅ Database seeded successfully! Created ${data.data.alerts} alerts, ${data.data.volunteers} volunteers, and ${data.data.trees} trees.`);
+        setSuccess(`Database seeded successfully! Created ${data.data.alerts} alerts, ${data.data.volunteers} volunteers, and ${data.data.trees} trees.`);
         setTimeout(() => {
           window.location.reload();
         }, 2000);
@@ -93,7 +93,7 @@ function AdminSettingsPage() {
 
       {/* Admin Preferences */}
       <Card>
-        <h3 className="font-semibold mb-4">👤 Admin Preferences</h3>
+        <h3 className="font-semibold mb-4">Admin Preferences</h3>
         <div className="space-y-4">
           <div>
             <label className="label">Dashboard Refresh Interval</label>
@@ -162,7 +162,7 @@ function AdminSettingsPage() {
 
       {/* Alert Thresholds (Read-only) */}
       <Card className="bg-blue-50 border border-blue-200">
-        <h3 className="font-semibold mb-4">⚙️ Alert Thresholds</h3>
+        <h3 className="font-semibold mb-4">Alert Thresholds</h3>
         <p className="text-sm text-slate-600 mb-4">
           Current system thresholds (from backend configuration)
         </p>
@@ -201,7 +201,7 @@ function AdminSettingsPage() {
 
       {/* Volunteer Matching Settings */}
       <Card className="bg-purple-50 border border-purple-200">
-        <h3 className="font-semibold mb-4">🎯 Volunteer Matching</h3>
+        <h3 className="font-semibold mb-4">Volunteer Matching</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="bg-white rounded-lg p-4 border border-purple-100">
             <p className="text-xs font-semibold text-slate-600 uppercase mb-2">
@@ -228,7 +228,7 @@ function AdminSettingsPage() {
       {/* System Info */}
       {settings && (
         <Card>
-          <h3 className="font-semibold mb-4">ℹ️ System Information</h3>
+          <h3 className="font-semibold mb-4">System Information</h3>
           <div className="space-y-3">
             <div className="flex items-center justify-between pb-3 border-b border-slate-200">
               <p className="text-sm text-slate-600">Last Updated</p>
@@ -242,14 +242,14 @@ function AdminSettingsPage() {
                 <div className="flex items-center justify-between pb-3 border-b border-slate-200">
                   <p className="text-sm text-slate-600">Server Status</p>
                   <span className="inline-block px-3 py-1 bg-green-100 text-green-700 rounded-full text-xs font-semibold">
-                    ✓ Running
+                    Running
                   </span>
                 </div>
 
                 <div className="flex items-center justify-between pb-3 border-b border-slate-200">
                   <p className="text-sm text-slate-600">Database Status</p>
                   <span className="inline-block px-3 py-1 bg-green-100 text-green-700 rounded-full text-xs font-semibold">
-                    ✓ Connected
+                    Connected
                   </span>
                 </div>
 
@@ -267,15 +267,14 @@ function AdminSettingsPage() {
 
       {/* Quick Links */}
       <Card className="bg-slate-50">
-        <h3 className="font-semibold mb-4">🔗 Quick Links</h3>
+        <h3 className="font-semibold mb-4">Quick Links</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <a
             href="http://localhost:5000/api/health"
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center gap-3 p-3 bg-white rounded-lg border border-slate-200 hover:border-blue-400 hover:shadow-md transition-all"
+            className="p-3 bg-white rounded-lg border border-slate-200 hover:border-blue-400 hover:shadow-md transition-all"
           >
-            <span className="text-xl">🏥</span>
             <div>
               <p className="font-semibold text-slate-900">API Health Check</p>
               <p className="text-xs text-slate-600">Check server status</p>
@@ -286,9 +285,8 @@ function AdminSettingsPage() {
             href="/README.md"
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center gap-3 p-3 bg-white rounded-lg border border-slate-200 hover:border-blue-400 hover:shadow-md transition-all"
+            className="p-3 bg-white rounded-lg border border-slate-200 hover:border-blue-400 hover:shadow-md transition-all"
           >
-            <span className="text-xl">📖</span>
             <div>
               <p className="font-semibold text-slate-900">API Documentation</p>
               <p className="text-xs text-slate-600">API endpoints & examples</p>
@@ -300,9 +298,8 @@ function AdminSettingsPage() {
               localStorage.clear();
               window.location.reload();
             }}
-            className="flex items-center gap-3 p-3 bg-white rounded-lg border border-slate-200 hover:border-red-400 hover:shadow-md transition-all text-left"
+            className="p-3 bg-white rounded-lg border border-slate-200 hover:border-red-400 hover:shadow-md transition-all text-left"
           >
-            <span className="text-xl">🗑️</span>
             <div>
               <p className="font-semibold text-slate-900">Clear Cache</p>
               <p className="text-xs text-slate-600">Clear local storage & reload</p>
@@ -311,9 +308,8 @@ function AdminSettingsPage() {
 
           <a
             href="/login"
-            className="flex items-center gap-3 p-3 bg-white rounded-lg border border-slate-200 hover:border-slate-400 hover:shadow-md transition-all"
+            className="p-3 bg-white rounded-lg border border-slate-200 hover:border-slate-400 hover:shadow-md transition-all"
           >
-            <span className="text-xl">🚪</span>
             <div>
               <p className="font-semibold text-slate-900">Logout</p>
               <p className="text-xs text-slate-600">Exit admin panel safely</p>
@@ -324,7 +320,7 @@ function AdminSettingsPage() {
 
       {/* Seed Test Data */}
       <Card className="bg-green-50 border border-green-200">
-        <h3 className="font-semibold mb-4">🌱 Seed Test Data (Development)</h3>
+        <h3 className="font-semibold mb-4">Seed Test Data (Development)</h3>
         <p className="text-sm text-slate-700 mb-4">
           Populate the database with sample volunteers, trees, and alerts for testing. This is useful for development and testing the admin dashboard.
         </p>
@@ -336,13 +332,13 @@ function AdminSettingsPage() {
           {loading ? "Seeding..." : "Seed Database"}
         </button>
         <p className="text-xs text-slate-600 mt-3">
-          ⚠️ This will clear existing data and create: 5 volunteers, 15 trees, and 25 alerts
+          Warning: This will clear existing data and create 5 volunteers, 15 trees, and 25 alerts.
         </p>
       </Card>
 
       {/* Support */}
       <Card className="bg-yellow-50 border border-yellow-200">
-        <h3 className="font-semibold mb-2">💡 Need Help?</h3>
+        <h3 className="font-semibold mb-2">Need Help?</h3>
         <p className="text-sm text-slate-700">
           For issues or questions, check the API documentation or contact the development team.
           System logs are available in the backend.

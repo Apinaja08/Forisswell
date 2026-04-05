@@ -38,7 +38,7 @@ function Navbar() {
 
       // Add Admin Panel for admins (at start after dashboard)
       if (user?.role === "admin") {
-        baseNav.splice(1, 0, { to: "/admin", label: "📊 Admin Panel" });
+        baseNav.splice(1, 0, { to: "/admin", label: "Admin Panel" });
       }
 
       return baseNav;
