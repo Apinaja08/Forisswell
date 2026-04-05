@@ -149,76 +149,33 @@ function AdminDashboard() {
 
       {/* Alert Stats Grid */}
       {stats && (
-        <>
-          <h2 className="text-lg font-semibold text-slate-900 mt-4">Alert Statistics</h2>
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
-            <StatCard
-              label="Total Alerts"
-              value={stats.overview?.total || 0}
-              trend={null}
-              color="bg-blue"
-              onClick={() => navigate("/admin/alerts")}
-            />
-            <StatCard
-              label="Pending Alerts"
-              value={stats.overview?.pending || 0}
-              trend={null}
-              color="bg-red"
-              onClick={() => navigate("/admin/alerts?status=pending")}
-            />
-            <StatCard
-              label="In Progress"
-              value={stats.overview?.inProgress || 0}
-              trend={null}
-              color="bg-yellow"
-              onClick={() => navigate("/admin/alerts?status=inProgress")}
-            />
-            <StatCard
-              label="Completed"
-              value={stats.overview?.completed || 0}
-              trend={null}
-              color="bg-green"
-              onClick={() => navigate("/admin/alerts?status=completed")}
-            />
-          </div>
-        </>
-      )}
-
-      {/* Risk Statistics */}
-      {riskStats && (
-        <>
-          <h2 className="text-lg font-semibold text-slate-900 mt-4">Forest Risk Statistics</h2>
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
-            <StatCard
-              label="Critical Risk Areas"
-              value={riskStats.critical || 0}
-              trend={null}
-              color="bg-red"
-              onClick={() => navigate("/risk-analysis?level=critical")}
-            />
-            <StatCard
-              label="High Risk Areas"
-              value={riskStats.byLevel?.find(l => l._id === "high")?.count || 0}
-              trend={null}
-              color="bg-orange"
-              onClick={() => navigate("/risk-analysis?level=high")}
-            />
-            <StatCard
-              label="Medium Risk Areas"
-              value={riskStats.byLevel?.find(l => l._id === "medium")?.count || 0}
-              trend={null}
-              color="bg-yellow"
-              onClick={() => navigate("/risk-analysis?level=medium")}
-            />
-            <StatCard
-              label="Total Monitored"
-              value={riskStats.total || 0}
-              trend={null}
-              color="bg-green"
-              onClick={() => navigate("/risk-analysis")}
-            />
-          </div>
-        </>
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
+          <StatCard
+            label="Total Alerts"
+            value={stats.overview?.total || 0}
+            trend={null}
+            color="bg-blue"
+          />
+          <StatCard
+            label="Pending Alerts"
+            value={stats.overview?.pending || 0}
+            trend={null}
+            color="bg-red"
+            onClick={() => navigate("/admin/alerts?status=pending")}
+          />
+          <StatCard
+            label="In Progress"
+            value={stats.overview?.inProgress || 0}
+            trend={null}
+            color="bg-yellow"
+          />
+          <StatCard
+            label="Completed"
+            value={stats.overview?.completed || 0}
+            trend={null}
+            color="bg-green"
+          />
+        </div>
       )}
 
       {/* Quick Actions */}

@@ -1,7 +1,15 @@
 import { useEffect, useState } from "react";
-import { MapContainer, TileLayer, Polygon, useMap, useMapEvents } from "react-leaflet";
+import { MapContainer, TileLayer, Polygon, useMap, useMapEvents, ZoomControl, ScaleControl, Marker, Popup } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
+
+// Fix for Leaflet marker icons in React
+delete L.Icon.Default.prototype._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
+  iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png',
+  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
+});
 import api from "../services/api";
 import LoadingSpinner from "../components/common/LoadingSpinner";
 import SectionHeader from "../components/ui/SectionHeader";
@@ -45,16 +53,30 @@ function DrawingInstructions({ drawing }) {
   
   useEffect(() => {
     if (drawing) {
-      const controlDiv = L.DomUtil.create('div', 'drawing-instructions');
-      controlDiv.innerHTML = `
-        <div style="background: rgba(0,0,0,0.8); color: white; padding: 8px 12px; border-radius: 4px; font-size: 14px; font-weight: bold;">
-          ✏️ Drawing Mode Active - Click on map to add points
+      const instructionHtml = document.createElement('div');
+      instructionHtml.className = 'drawing-instructions-control';
+      instructionHtml.innerHTML = `
+        <div style="
+          background: linear-gradient(135deg, #22c55e, #16a34a);
+          color: white;
+          padding: 12px 16px;
+          border-radius: 8px;
+          font-size: 14px;
+          font-weight: 600;
+          box-shadow: 0 4px 6px rgba(0,0,0,0.2);
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          border: 2px solid white;
+        ">
+          <span style="font-size: 18px;">✏️</span>
+          <span>Drawing Mode - Click to add points (min 3)</span>
         </div>
       `;
       
       const customControl = L.Control.extend({
         onAdd: function() {
-          return controlDiv;
+          return instructionHtml;
         },
         onRemove: function() {}
       });
@@ -81,7 +103,7 @@ function DrawingInstructions({ drawing }) {
   return null;
 }
 
-// Custom component to display points
+// Custom component to display points with improved styling
 function DrawingPoints({ points }) {
   const map = useMap();
   
@@ -91,14 +113,30 @@ function DrawingPoints({ points }) {
     const markers = points.map((point, index) => {
       const marker = L.marker([point[1], point[0]], {
         icon: L.divIcon({
-          className: 'drawing-marker',
-          html: `<div style="background: #22c55e; color: white; width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; border: 2px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.3);">${index + 1}</div>`,
-          iconSize: [24, 24],
-          iconAnchor: [12, 12]
+          className: 'drawing-marker-custom',
+          html: `<div style="
+            background: linear-gradient(135deg, #22c55e, #16a34a);
+            color: white;
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 14px;
+            border: 3px solid white;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3), inset 0 1px 2px rgba(255,255,255,0.3);
+            transition: transform 0.2s;
+          " onmouseover="this.style.transform='scale(1.2)'" onmouseout="this.style.transform='scale(1)'">${index + 1}</div>`,
+          iconSize: [32, 32],
+          iconAnchor: [16, 16],
+          popupAnchor: [0, -16]
         })
       }).addTo(map);
       
-      marker.bindTooltip(`Point ${index + 1}`, { permanent: false, direction: 'top' });
+      marker.bindTooltip(`Point ${index + 1}`, { permanent: true, direction: 'top', offset: [0, -20] });
+      marker.bindPopup(`<div style="text-align: center; font-weight: 600;">Point ${index + 1}<br/><small>${point[1].toFixed(4)}, ${point[0].toFixed(4)}</small></div>`);
       return marker;
     });
     
@@ -1944,16 +1982,24 @@ const RiskAnalysisPage = () => {
 
                   <div>
                     <label className="label">Draw Polygon on Map</label>
-                    <div className="border rounded-lg overflow-hidden" style={{ height: "500px" }}>
+                    <div className="border rounded-lg overflow-hidden shadow-lg" style={{ height: "500px" }}>
                       <MapContainer
                         center={mapCenter}
                         zoom={mapZoom}
                         style={{ height: "100%", width: "100%" }}
+                        zoomControl={false}
+                        scrollWheelZoom={true}
+                        touchZoom={true}
+                        dragging={true}
                       >
                         <TileLayer
                           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+                          attribution='&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap</a> contributors'
+                          maxZoom={19}
+                          minZoom={2}
                         />
+                        <ZoomControl position="topright" />
+                        <ScaleControl position="bottomleft" />
                         <MapClickHandler 
                           drawing={analysisForm.drawing} 
                           onMapClick={handleMapClick}
@@ -1963,7 +2009,7 @@ const RiskAnalysisPage = () => {
                         {analysisForm.coordinates.length > 0 && (
                           <Polygon
                             positions={analysisForm.coordinates.map(coord => [coord[1], coord[0]])}
-                            pathOptions={{ color: "#22c55e", weight: 3, fillColor: "#22c55e", fillOpacity: 0.2 }}
+                            pathOptions={{ color: "#22c55e", weight: 3, fillColor: "#dcfce7", fillOpacity: 0.4 }}
                           />
                         )}
                       </MapContainer>

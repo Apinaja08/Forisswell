@@ -88,6 +88,150 @@
   .page-subtitle {
     @apply mt-2 text-sm text-slate-600 sm:text-base;
   }
+}
+
+/* Leaflet Map Responsive Improvements */
+@layer utilities {
+  /* Map Container Responsiveness */
+  .leaflet-container {
+    @apply rounded-lg overflow-hidden;
+    font-family: inherit;
+  }
+
+  .leaflet-container a {
+    @apply text-leaf-600 hover:text-leaf-700;
+  }
+
+  /* Zoom Control Styling */
+  .leaflet-control-zoom {
+    @apply rounded-lg shadow-lg !important;
+    border-radius: 8px !important;
+  }
+
+  .leaflet-control-zoom-in,
+  .leaflet-control-zoom-out {
+    @apply bg-white text-slate-700 hover:bg-slate-100 font-bold text-lg transition-colors duration-200 !important;
+    border: none !important;
+    width: 40px !important;
+    height: 40px !important;
+    line-height: 38px !important;
+    border-radius: 6px !important;
+  }
+
+  .leaflet-control-zoom-in {
+    @apply rounded-t-lg !important;
+  }
+
+  .leaflet-control-zoom-out {
+    @apply rounded-b-lg !important;
+  }
+
+  /* Scale Control */
+  .leaflet-control-scale {
+    @apply bg-white/90 backdrop-blur rounded-lg shadow-md !important;
+  }
+
+  .leaflet-control-scale-line {
+    @apply border-slate-400 !important;
+  }
+
+  /* Attribution Control */
+  .leaflet-control-attribution {
+    @apply bg-white/80 backdrop-blur text-xs !important;
+    border-radius: 6px !important;
+  }
+
+  /* Popup Styling */
+  .leaflet-popup-content-wrapper {
+    @apply rounded-lg shadow-lg !important;
+    background-color: rgb(255, 255, 255) !important;
+    border-radius: 8px !important;
+  }
+
+  .leaflet-popup-content {
+    @apply text-sm text-slate-700 !important;
+    margin: 8px !important;
+  }
+
+  .leaflet-popup-tip {
+    @apply bg-white !important;
+  }
+
+  /* Tooltip Styling */
+  .leaflet-tooltip {
+    @apply bg-slate-900 text-white text-xs font-semibold rounded-lg !important;
+    border: none !important;
+    padding: 6px 8px !important;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2) !important;
+  }
+
+  .leaflet-tooltip-bottom::before {
+    @apply border-b-slate-900 !important;
+  }
+
+  .leaflet-tooltip-top::before {
+    @apply border-t-slate-900 !important;
+  }
+
+  /* Marker Custom Styling */
+  .drawing-marker-custom .leaflet-marker-icon {
+    border: none !important;
+    background: transparent !important;
+  }
+
+  /* Mobile Responsive Map Height */
+  @media (max-width: 768px) {
+    .map-container-mobile {
+      @apply h-72 sm:h-96;
+    }
+
+    .leaflet-control-zoom {
+      @apply scale-90;
+      transform-origin: top right;
+    }
+
+    .leaflet-control {
+      @apply !ml-2 !mb-2;
+    }
+  }
+
+  /* Leaflet Draw Controls (for future enhancements) */
+  .leaflet-draw-toolbar {
+    @apply rounded-lg shadow-lg !important;
+  }
+
+  .leaflet-draw-toolbar a {
+    @apply bg-white hover:bg-slate-100 text-slate-700 transition-colors !important;
+  }
+
+  .leaflet-draw-toolbar a.leaflet-draw-draw-marker {
+    @apply bg-leaf-500 hover:bg-leaf-600 text-white !important;
+  }
+
+  /* Map Container Animations */
+  @keyframes mapPopIn {
+    from {
+      opacity: 0;
+      transform: scale(0.95);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+
+  .map-container {
+    animation: mapPopIn 0.3s ease-out;
+  }
+
+  /* Leaflet Pane Improvements */
+  .leaflet-pane {
+    @apply will-change-transform;
+  }
+
+  .leaflet-tile-pane {
+    @apply will-change-transform;
+  }
 
   .hero-overlay {
     @apply pointer-events-none absolute inset-0 bg-hero-glow;

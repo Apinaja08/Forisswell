@@ -21,13 +21,18 @@ function Navbar() {
     () => {
       const baseNav = [
         { to: "/dashboard", label: "Dashboard" },
-        { to: "/trees", label: "Trees" },
-        { to: "/events", label: "Events" },
-        { to: "/profile", label: "Profile" },
       ];
 
-      // Add Alerts for volunteers and admins
-      if (user?.role === "volunteer" || user?.role === "admin") {
+      // Hide Trees and Alerts for admins - they have their own admin panel
+      if (user?.role !== "admin") {
+        baseNav.push({ to: "/trees", label: "Trees" });
+      }
+
+      baseNav.push({ to: "/events", label: "Events" });
+      baseNav.push({ to: "/profile", label: "Profile" });
+
+      // Add Alerts for volunteers only (not admins)
+      if (user?.role === "volunteer") {
         baseNav.splice(3, 0, { to: "/alerts", label: "Alerts" });
       }
 
