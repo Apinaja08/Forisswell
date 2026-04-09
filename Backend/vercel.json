@@ -1,25 +1,15 @@
 {
   "version": 2,
-  "buildCommand": "npm run build",
+  "buildCommand": "npm install",
   "installCommand": "npm install",
-  "builds": [
+  "rewrites": [
     {
-      "src": "app.js",
-      "use": "@vercel/node"
+      "source": "/(.*)",
+      "destination": "/api/index.js"
     }
   ],
-  "routes": [
-    {
-      "src": "/(.*)",
-      "dest": "app.js"
-    }
-  ],
-  "outputDirectory": null,
-  "env": {
-    "NODE_ENV": "production"
-  },
   "functions": {
-    "app.js": {
+    "api/index.js": {
       "maxDuration": 30,
       "memory": 1024
     }
