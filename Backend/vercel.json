@@ -1,0 +1,27 @@
+{
+  "version": 2,
+  "buildCommand": "npm run build",
+  "installCommand": "npm install",
+  "builds": [
+    {
+      "src": "Server.js",
+      "use": "@vercel/node"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "Server.js"
+    }
+  ],
+  "outputDirectory": null,
+  "env": {
+    "NODE_ENV": "production"
+  },
+  "functions": {
+    "Server.js": {
+      "maxDuration": 30,
+      "memory": 1024
+    }
+  }
+}
