@@ -4,14 +4,14 @@
   "installCommand": "npm install",
   "builds": [
     {
-      "src": "Server.js",
+      "src": "app.js",
       "use": "@vercel/node"
     }
   ],
   "routes": [
     {
       "src": "/(.*)",
-      "dest": "Server.js"
+      "dest": "app.js"
     }
   ],
   "outputDirectory": null,
@@ -19,7 +19,7 @@
     "NODE_ENV": "production"
   },
   "functions": {
-    "Server.js": {
+    "app.js": {
       "maxDuration": 30,
       "memory": 1024
     }

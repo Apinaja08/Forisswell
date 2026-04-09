@@ -62,6 +62,23 @@ app.use((req, res, next) => {
   next();
 });
 
+// Root route - responds to homepage request
+app.get("/", (req, res) => {
+  res.status(200).json({
+    success: true,
+    message: "Forisswell Backend API",
+    version: "1.0.0",
+    status: "running",
+    endpoints: {
+      health: "/api/health",
+      auth: "/api/auth",
+      trees: "/api/trees",
+      alerts: "/api/alerts",
+      volunteers: "/api/volunteers",
+    },
+  });
+});
+
 app.use(
   "/api",
   rateLimit({
