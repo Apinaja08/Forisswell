@@ -17,6 +17,61 @@ const createError = (statusCode, message) => {
 };
 
 /**
+ * @desc    Debug: Manually trigger weather check
+ * @route   POST /api/alerts/debug/check-weather
+ * @access  Private (Admin only)
+ */
+exports.debugCheckWeather = asyncHandler(async (req, res, next) => {
+  console.log("\n🔧 MANUAL WEATHER CHECK TRIGGERED BY ADMIN");
+  await alertService.checkAllTreesWeather();
+  
+  res.json({
+    success: true,
+    message: "Weather check triggered. Check console logs for details.",
+  });
+});
+
+/**
+ * @desc    Debug: Get system status
+ * @route   GET /api/alerts/debug/status
+ * @access  Private (Admin only)
+ */
+exports.debugStatus = asyncHandler(async (req, res, next) => {
+  const trees = await Tree.find({ isActive: true, "location.coordinates": { $exists: true } }).count();
+  const volunteers = await VolunteerProfile.find({ isActive: true }).count();
+  const availableVolunteers = await VolunteerProfile.find({ status: "available" }).count();
+  const alerts = await Alert.find({ isActive: true }).count();
+  const pendingAlerts = await Alert.find({ status: "pending", isActive: true }).count();
+
+  res.json({
+    success: true,
+    message: "System status",
+    data: {
+      trees,
+      volunteers: {
+        total: volunteers,
+        available: availableVolunteers,
+      },
+      alerts: {
+        total: alerts,
+        pending: pendingAlerts,
+      },
+      weather: {
+        monitoringInterval: process.env.ALERT_CHECK_INTERVAL || "300000ms",
+      },
+      thresholds: {
+        tempThreshold: process.env.ALERT_TEMP_THRESHOLD || 35,
+        rainThreshold: process.env.ALERT_RAIN_THRESHOLD || 50,
+        windThreshold: process.env.ALERT_WIND_THRESHOLD || 40,
+      },
+      socket: {
+        connected: !!global.io,
+      },
+    },
+  });
+});
+
+/**
  * @desc    Get nearby pending alerts for volunteer
  * @route   GET /api/alerts/nearby
  * @access  Private (Volunteer role)
