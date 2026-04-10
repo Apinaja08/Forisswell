@@ -27,7 +27,7 @@ function AdminLeaderboardPage() {
       };
 
       const res = await fetch(
-        `http://localhost:5000/api/alerts/leaderboard?limit=${limit}&sort=${sortMap[sortBy]}`,
+        `import.meta.env.VITE_API_BASE_URL/alerts/leaderboard?limit=${limit}&sort=${sortMap[sortBy]}`,
         {
           headers: {
             Authorization: `Bearer ${localStorage.getItem("forisswell_token")}`,  

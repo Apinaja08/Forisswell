@@ -28,7 +28,7 @@ function AdminMapPage() {
         ...(filters.priority && { priority: filters.priority }),
       });
 
-      const res = await fetch(`http://localhost:5000/api/alerts/map?${params}`, {
+      const res = await fetch(`import.meta.env.VITE_API_BASE_URL/alerts/map?${params}`, {
         headers: {
           Authorization: `Bearer ${localStorage.getItem("forisswell_token")}`,  
         },

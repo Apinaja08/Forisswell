@@ -31,7 +31,7 @@ function AdminSettingsPage() {
       setError("");
 
       // Fetch system health
-      const healthRes = await fetch("http://localhost:5000/api/health");
+      const healthRes = await fetch("import.meta.env.VITE_API_BASE_URL/health");
       if (healthRes.ok) {
         const health = await healthRes.json();
         setSettings({
@@ -57,7 +57,7 @@ function AdminSettingsPage() {
       setSuccess("");
 
       const token = localStorage.getItem("forisswell_token");  
-      const response = await fetch("http://localhost:5000/api/alerts/seed", {
+      const response = await fetch("import.meta.env.VITE_API_BASE_URL/alerts/seed", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -270,7 +270,7 @@ function AdminSettingsPage() {
         <h3 className="font-semibold mb-4">Quick Links</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <a
-            href="http://localhost:5000/api/health"
+            href="import.meta.env.VITE_API_BASE_URL/health"
             target="_blank"
             rel="noopener noreferrer"
             className="p-3 bg-white rounded-lg border border-slate-200 hover:border-blue-400 hover:shadow-md transition-all"

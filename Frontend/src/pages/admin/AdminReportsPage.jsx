@@ -20,7 +20,7 @@ function AdminReportsPage() {
       setError("");
 
       // Fetch statistics
-      const statsRes = await fetch("http://localhost:5000/api/alerts/statistics", {
+      const statsRes = await fetch("import.meta.env.VITE_API_BASE_URL/alerts/statistics", {
         headers: {
           Authorization: `Bearer ${localStorage.getItem("forisswell_token")}`,  
         },
@@ -35,7 +35,7 @@ function AdminReportsPage() {
 
       // Fetch leaderboard
       const leaderboardRes = await fetch(
-        "http://localhost:5000/api/alerts/leaderboard?limit=10",
+        "import.meta.env.VITE_API_BASE_URL/alerts/leaderboard?limit=10",
         {
           headers: {
             Authorization: `Bearer ${localStorage.getItem("forisswell_token")}`,  

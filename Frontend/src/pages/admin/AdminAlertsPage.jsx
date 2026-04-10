@@ -42,7 +42,7 @@ function AdminAlertsPage() {
         ...(filters.dateTo && { dateTo: filters.dateTo }),
       });
 
-      const res = await fetch(`http://localhost:5000/api/alerts?${params}`, {
+      const res = await fetch(`import.meta.env.VITE_API_BASE_URL/alerts?${params}`, {
         headers: {
           Authorization: `Bearer ${localStorage.getItem("forisswell_token")}`,  
         },
@@ -70,7 +70,7 @@ function AdminAlertsPage() {
 
   const handleAlertClick = async (alertId) => {
     try {
-      const res = await fetch(`http://localhost:5000/api/alerts/${alertId}`, {
+      const res = await fetch(`import.meta.env.VITE_API_BASE_URL/alerts/${alertId}`, {
         headers: {
           Authorization: `Bearer ${localStorage.getItem("forisswell_token")}`,  
         },
@@ -90,7 +90,7 @@ function AdminAlertsPage() {
       const reason = prompt("Enter reason for cancellation:");
       if (!reason) return;
 
-      const res = await fetch(`http://localhost:5000/api/alerts/${alertId}/cancel`, {
+      const res = await fetch(`import.meta.env.VITE_API_BASE_URL/alerts/${alertId}/cancel`, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${localStorage.getItem("forisswell_token")}`,

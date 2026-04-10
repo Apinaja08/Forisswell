@@ -28,7 +28,7 @@ function AdminDashboard() {
       setError("");
 
       // Fetch alert statistics
-      const statsRes = await fetch("http://localhost:5000/api/alerts/statistics", {
+      const statsRes = await fetch("import.meta.env.VITE_API_BASE_URL/alerts/statistics", {
         headers: {
           Authorization: `Bearer ${localStorage.getItem("forisswell_token")}`,
         },
@@ -55,7 +55,7 @@ function AdminDashboard() {
 
       // Fetch risk statistics
       try {
-        const riskStatsRes = await fetch("http://localhost:5000/api/risk/stats", {
+        const riskStatsRes = await fetch("import.meta.env.VITE_API_BASE_URL/risk/stats", {
           headers: {
             Authorization: `Bearer ${localStorage.getItem("forisswell_token")}`,
           },
@@ -71,7 +71,7 @@ function AdminDashboard() {
 
       // Fetch recent completed alerts
       const alertsRes = await fetch(
-        "http://localhost:5000/api/alerts?status=completed&limit=10&sort=-completedAt",
+        "import.meta.env.VITE_API_BASE_URL/alerts?status=completed&limit=10&sort=-completedAt",
         {
           headers: {
             Authorization: `Bearer ${localStorage.getItem("forisswell_token")}`,
@@ -87,7 +87,7 @@ function AdminDashboard() {
       // Fetch recent high-risk areas
       try {
         const risksRes = await fetch(
-          "http://localhost:5000/api/risk?limit=5&sort=-riskScore",
+          "import.meta.env.VITE_API_BASE_URL/risk?limit=5&sort=-riskScore",
           {
             headers: {
               Authorization: `Bearer ${localStorage.getItem("forisswell_token")}`,
