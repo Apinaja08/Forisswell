@@ -24,6 +24,10 @@ router.get("/leaderboard", authorize("admin"), alertController.getVolunteerLeade
 router.get("/map", authorize("admin"), alertController.getAlertsByRegion);
 router.post("/seed", authorize("admin"), alertController.seedTestData);
 
+// Debug routes (Admin only)
+router.post("/debug/check-weather", authorize("admin"), alertController.debugCheckWeather);
+router.get("/debug/status", authorize("admin"), alertController.debugStatus);
+
 // View routes (all authenticated users)
 router.get("/tree/:treeId", alertController.getTreeAlerts);
 router.get("/:id", alertController.getAlertById);

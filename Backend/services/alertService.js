@@ -81,21 +81,46 @@ class AlertService {
         "location.coordinates": { $exists: true },
       }).select("name species location owner");
 
+      console.log("\n🌳 ALERT CHECK DEBUG START");
+      console.log(`📍 Found ${trees.length} active trees with locations`);
       logger.info(`Checking weather for ${trees.length} trees...`);
+
+      if (trees.length === 0) {
+        console.warn("⚠️  No trees found in database!");
+        return;
+      }
 
       let alertsCreated = 0;
 
       for (const tree of trees) {
         try {
+          const treeName = tree.name || tree.species || "Unknown";
+          console.log(`\n🔍 Checking tree: ${treeName} (${tree._id})`);
+          
           // Get weather data for tree location
           const [longitude, latitude] = tree.location.coordinates;
+          console.log(`📡 Coordinates: lat=${latitude}, lon=${longitude}`);
+          
           const weatherData = await weatherService.getWeatherByCoordinates(
             latitude,
             longitude
           );
 
+          console.log(`🌡️  Weather Data:`, {
+            temperature: weatherData.temperature,
+            rainfall: weatherData.rainfall,
+            windSpeed: weatherData.windSpeed,
+            description: weatherData.description,
+          });
+
           // Evaluate if weather violates thresholds
           const evaluation = this.evaluateWeatherThresholds(weatherData);
+
+          console.log(`⚙️  Threshold Evaluation:`, {
+            violations: evaluation.violations.length,
+            priority: evaluation.priority,
+            details: evaluation.violations,
+          });
 
           if (evaluation.violations.length > 0) {
             // Check if there's already a pending/assigned alert for this tree
@@ -106,6 +131,8 @@ class AlertService {
             });
 
             if (!existingAlert) {
+              console.log(`✅ Creating alert for ${treeName}...`);
+              
               // Create new alert
               const alert = await this.createAutomatedAlert(
                 tree,
@@ -113,35 +140,46 @@ class AlertService {
                 evaluation
               );
 
+              console.log(`📢 Alert created (ID: ${alert._id}), searching for volunteers...`);
+
               // Find nearby volunteers
               const volunteers = await this.findNearbyVolunteers(
                 tree.location.coordinates,
                 process.env.VOLUNTEER_MATCH_RADIUS || 5
               );
 
+              console.log(`👥 Found ${volunteers.length} nearby volunteers`);
+
               // Broadcast to volunteers
               if (volunteers.length > 0) {
                 await this.broadcastAlertToVolunteers(alert, volunteers);
-                const treeName = tree.name || tree.species || "Unknown tree";
+                console.log(`✈️  Alert broadcasted to ${volunteers.length} volunteers`);
                 logger.info(
                   `Alert ${alert._id} for ${treeName} broadcasted to ${volunteers.length} volunteers`
                 );
               } else {
-                const treeName = tree.name || tree.species || "Unknown tree";
+                console.warn(`⚠️  No available volunteers found near tree: ${treeName}`);
                 logger.warn(
                   `No available volunteers found near tree: ${treeName} (${tree._id})`
                 );
               }
 
               alertsCreated++;
+            } else {
+              console.log(`⏭️  Alert already exists for this tree, skipping...`);
             }
+          } else {
+            console.log(`✅ No violations detected for ${treeName}`);
           }
         } catch (error) {
           const treeName = tree.name || tree.species || "Unknown tree";
+          console.error(`❌ Error checking weather for tree: ${treeName}`);
+          console.error(error);
           logger.error(`Error checking weather for tree: ${treeName} (${tree._id}):`, error);
         }
       }
 
+      console.log(`\n✨ Weather check completed. ${alertsCreated} new alerts created.\n`);
       logger.info(`Weather check completed. ${alertsCreated} new alerts created.`);
     } catch (error) {
       logger.error("Error in checkAllTreesWeather:", error);
@@ -159,9 +197,16 @@ class AlertService {
     const rainThreshold = parseFloat(process.env.ALERT_RAIN_THRESHOLD || 50);
     const windThreshold = parseFloat(process.env.ALERT_WIND_THRESHOLD || 40);
 
+    console.log(`🎯 Threshold Values:`, {
+      tempThreshold,
+      rainThreshold,
+      windThreshold,
+    });
+
     // Check temperature (in Celsius)
     if (weatherData.temperature > tempThreshold) {
       const excess = weatherData.temperature - tempThreshold;
+      console.log(`🔥 Temperature violation: ${weatherData.temperature}°C > ${tempThreshold}°C (excess: ${excess.toFixed(2)})`);
       violations.push({
         type: "high_temperature",
         threshold: `${tempThreshold}°C`,
@@ -169,11 +214,14 @@ class AlertService {
         excessAmount: excess,
       });
       maxExcess = Math.max(maxExcess, excess);
+    } else {
+      console.log(`✅ Temperature OK: ${weatherData.temperature}°C ≤ ${tempThreshold}°C`);
     }
 
     // Check rainfall (in mm/h)
     if (weatherData.rainfall > rainThreshold) {
       const excess = weatherData.rainfall - rainThreshold;
+      console.log(`💧 Rainfall violation: ${weatherData.rainfall}mm/h > ${rainThreshold}mm/h (excess: ${excess.toFixed(2)})`);
       violations.push({
         type: "heavy_rain",
         threshold: `${rainThreshold}mm/h`,
@@ -181,12 +229,15 @@ class AlertService {
         excessAmount: excess,
       });
       maxExcess = Math.max(maxExcess, excess);
+    } else {
+      console.log(`✅ Rainfall OK: ${weatherData.rainfall}mm/h ≤ ${rainThreshold}mm/h`);
     }
 
     // Check wind speed (convert m/s to km/h)
     const windSpeedKmh = weatherData.windSpeed * 3.6;
     if (windSpeedKmh > windThreshold) {
       const excess = windSpeedKmh - windThreshold;
+      console.log(`💨 Wind violation: ${windSpeedKmh.toFixed(2)}km/h > ${windThreshold}km/h (excess: ${excess.toFixed(2)})`);
       violations.push({
         type: "strong_wind",
         threshold: `${windThreshold}km/h`,
@@ -194,6 +245,8 @@ class AlertService {
         excessAmount: excess,
       });
       maxExcess = Math.max(maxExcess, excess);
+    } else {
+      console.log(`✅ Wind OK: ${windSpeedKmh.toFixed(2)}km/h ≤ ${windThreshold}km/h`);
     }
 
     // Calculate priority based on violations
@@ -294,6 +347,8 @@ class AlertService {
    */
   async findNearbyVolunteers(coordinates, radiusKm) {
     try {
+      console.log(`\n🔎 Searching for volunteers within ${radiusKm}km of:`, coordinates);
+      
       const volunteers = await VolunteerProfile.find({
         isActive: true,
         isAvailable: true,
@@ -311,8 +366,21 @@ class AlertService {
         .populate("user", "fullName email")
         .limit(50); // Limit to 50 nearest volunteers
 
+      console.log(`🔎 Volunteer search result: Found ${volunteers.length} available volunteers`);
+      
+      if (volunteers.length === 0) {
+        console.warn(`⚠️  Check if any volunteers exist:`);
+        const allVolunteers = await VolunteerProfile.find().count();
+        const activeVolunteers = await VolunteerProfile.find({ isActive: true }).count();
+        const availableVolunteers = await VolunteerProfile.find({ status: "available" }).count();
+        console.warn(`   - Total volunteers: ${allVolunteers}`);
+        console.warn(`   - Active volunteers: ${activeVolunteers}`);
+        console.warn(`   - Available volunteers: ${availableVolunteers}`);
+      }
+
       return volunteers;
     } catch (error) {
+      console.error("❌ Error finding nearby volunteers:", error);
       logger.error("Error finding nearby volunteers:", error);
       return [];
     }
@@ -345,27 +413,18 @@ class AlertService {
 
       // Send Socket.io notifications
       if (global.io) {
+        console.log(`📡 Socket.io available, sending to ${volunteers.length} volunteers...`);
         volunteers.forEach((volunteer) => {
-          global.io.to(`volunteer-${volunteer.user._id}`).emit("new-alert", alertData);
+          const socketRoom = `volunteer-${volunteer.user._id}`;
+          console.log(`   ➤ Sending to room: ${socketRoom}`);
+          global.io.to(socketRoom).emit("new-alert", alertData);
         });
+        console.log(`✅ Socket.io notifications sent`);
+      } else {
+        console.warn(`⚠️  Socket.io not available (global.io is undefined)`);
       }
-
-      // Send push notifications
-      // PWA Push Notifications disabled - user preference
-      // const pushPayload = {
-      //   title: `🌳 ${alert.priority.toUpperCase()} Alert!`,
-      //   body: alert.description.substring(0, 100),
-      //   icon: "/icons/alert-icon.png",
-      //   badge: "/icons/badge.png",
-      //   data: {
-      //     alertId: alert._id.toString(),
-      //     treeId: alert.tree._id.toString(),
-      //     type: alert.type,
-      //     url: `/volunteer-dashboard/alerts/${alert._id}`,
-      //   },
-      // };
-      // await pushNotificationService.sendPushToMultiple(volunteers, pushPayload);
     } catch (error) {
+      console.error("❌ Error broadcasting alert:", error);
       logger.error("Error broadcasting alert:", error);
     }
   }
