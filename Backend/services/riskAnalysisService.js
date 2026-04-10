@@ -12,120 +12,124 @@ class RiskAnalysisService {
   }
 
   async analyzeArea(polygonData) {
-    try {
-      logger.info(`========================================`);
-      logger.info(`Starting risk analysis for: ${polygonData.name || 'unnamed'}`);
-      logger.info(`========================================`);
+  try {
+    logger.info(`Starting risk analysis for: ${polygonData.name || 'unnamed'}`);
 
-      // Extract coordinates
-      let coordinates = polygonData.coordinates;
-      let coordinatesForServices = coordinates;
-      
-      if (Array.isArray(coordinates[0]) && Array.isArray(coordinates[0][0])) {
-        coordinatesForServices = coordinates;
-      } else if (Array.isArray(coordinates[0]) && coordinates[0].length === 2) {
-        coordinatesForServices = [coordinates];
-      }
-
-      logger.info(`Fetching tree cover data from Sentinel Hub...`);
-      
-      // Get tree cover data directly
-      const treeCoverData = await sentinelHubService.analyzeTreeCover(coordinatesForServices);
-      
-      logger.info(`Tree cover data received:`, {
-        source: treeCoverData.source,
-        treeCoverPercentage: treeCoverData.treeCoverPercentage,
-        ndviMean: treeCoverData.ndviMean
-      });
-      
-      // Get deforestation data
-      const deforestationData = await sentinelHubService.detectDeforestation(coordinatesForServices);
-      
-      logger.info(`Deforestation data:`, {
-        source: deforestationData.source,
-        hasDeforestation: deforestationData.hasDeforestation
-      });
-      
-      // Get historical data
-      const historicalData = await sentinelHubService.getHistoricalTrends(coordinatesForServices);
-      
-      // Get encroachment risk
-      const standardizedPolygon = {
-        ...polygonData,
-        coordinates: coordinatesForServices
-      };
-      const encroachmentRisk = await overpassService.calculateEncroachmentRisk(standardizedPolygon);
-      
-      // Get nearby settlements
-      const settlements = await overpassService.getNearbySettlements(coordinatesForServices);
-      
-      logger.info(`All data fetched successfully`);
-
-      // Calculate risk factors
-      const factors = {
-        treeCoverLoss: Math.max(0, 100 - (treeCoverData.treeCoverPercentage || 50)),
-        degradationRate: this.calculateDegradationRate(historicalData),
-        fireRisk: this.calculateFireRisk(historicalData),
-        encroachmentRisk: typeof encroachmentRisk === 'number' ? encroachmentRisk : 25,
-        illegalLoggingProbability: deforestationData.hasDeforestation ? 75 : 15
-      };
-
-      logger.info(`📈 Risk factors:`, factors);
-
-      const riskScore = this.calculateOverallRisk(factors);
-      const riskLevel = this.calculateRiskLevel(riskScore);
-
-      logger.info(`🎯 Overall risk: ${riskLevel.toUpperCase()} (Score: ${riskScore})`);
-
-      // Build region info from settlements
-      let region = 'Unknown Region';
-      let country = 'Unknown';
-      if (settlements && settlements.length > 0 && settlements[0]) {
-        region = settlements[0].name || 'Unknown Region';
-      }
-
-      // Create risk assessment
-      const riskAssessment = new Risk({
-        polygonId: polygonData.id || `polygon-${Date.now()}`,
-        name: polygonData.name || 'Unnamed Area',
-        coordinates: {
-          type: 'Polygon',
-          coordinates: polygonData.coordinates
-        },
-        riskLevel,
-        riskScore,
-        factors,
-        satelliteData: {
-          source: treeCoverData.source || 'Sentinel-2 L2A',
-          imageryDate: new Date(),
-          confidence: treeCoverData.confidence || 75,
-          changeDetected: deforestationData.hasDeforestation || false,
-          treeCoverPercentage: treeCoverData.treeCoverPercentage || 50,
-          historicalComparison: {
-            fiveYearChange: this.calculateHistoricalChange(historicalData, 5),
-            tenYearChange: this.calculateHistoricalChange(historicalData, 10)
-          }
-        },
-        actions: this.determineRequiredActions(riskLevel, factors),
-        metadata: {
-          createdBy: 'system',
-          updatedAt: new Date(),
-          region: region,
-          country: country,
-          tags: [riskLevel, treeCoverData.source === 'mock' ? 'mock-data' : 'sentinel-hub']
-        }
-      });
-
-      await riskAssessment.save();
-      logger.info(`✅ Risk assessment saved successfully! ID: ${riskAssessment._id}`);
-      logger.info(`   Using ${treeCoverData.source === 'mock' ? 'MOCK' : 'REAL'} data from ${treeCoverData.source}`);
-
-      return riskAssessment;
-    } catch (error) {
-      logger.error('❌ Risk analysis failed:', error);
-      throw error;
+    // Extract coordinates
+    let coordinates = polygonData.coordinates;
+    let coordinatesForServices = coordinates;
+    
+    if (Array.isArray(coordinates[0]) && Array.isArray(coordinates[0][0])) {
+      coordinatesForServices = coordinates;
+    } else if (Array.isArray(coordinates[0]) && coordinates[0].length === 2) {
+      coordinatesForServices = [coordinates];
     }
+
+    // Use Promise.race with timeouts to ensure Vercel doesn't timeout
+    const timeout = (ms) => new Promise((_, reject) => 
+      setTimeout(() => reject(new Error('Timeout')), ms)
+    );
+    
+    const fetchWithTimeout = async (promise, ms, fallback) => {
+      try {
+        return await Promise.race([promise, timeout(ms)]);
+      } catch (error) {
+        logger.warn(`Operation timed out, using fallback`);
+        return fallback;
+      }
+    };
+    
+    // Fetch data with timeouts
+    const treeCoverData = await fetchWithTimeout(
+      sentinelHubService.analyzeTreeCover(coordinatesForServices),
+      15000,
+      sentinelHubService.getMockTreeCoverData(coordinatesForServices)
+    );
+    
+    const deforestationData = await fetchWithTimeout(
+      sentinelHubService.detectDeforestation(coordinatesForServices),
+      15000,
+      sentinelHubService.getMockDeforestationData(coordinatesForServices)
+    );
+    
+    const historicalData = await fetchWithTimeout(
+      sentinelHubService.getHistoricalTrends(coordinatesForServices),
+      15000,
+      sentinelHubService.getMockHistoricalData()
+    );
+    
+    const standardizedPolygon = {
+      ...polygonData,
+      coordinates: coordinatesForServices
+    };
+    
+    const encroachmentRisk = await fetchWithTimeout(
+      overpassService.calculateEncroachmentRisk(standardizedPolygon),
+      10000,
+      15
+    );
+    
+    const settlements = await fetchWithTimeout(
+      overpassService.getNearbySettlements(coordinatesForServices),
+      10000,
+      []
+    );
+
+    logger.info(`Data sources: TreeCover=${treeCoverData.source}`);
+
+    // Calculate risk factors
+    const factors = {
+      treeCoverLoss: Math.max(0, 100 - (treeCoverData.treeCoverPercentage || 50)),
+      degradationRate: this.calculateDegradationRate(historicalData),
+      fireRisk: this.calculateFireRisk(historicalData),
+      encroachmentRisk: typeof encroachmentRisk === 'number' ? encroachmentRisk : 25,
+      illegalLoggingProbability: deforestationData.hasDeforestation ? 75 : 15
+    };
+
+    const riskScore = this.calculateOverallRisk(factors);
+    const riskLevel = this.calculateRiskLevel(riskScore);
+
+    // Create risk assessment
+    const riskAssessment = new Risk({
+      polygonId: polygonData.id || `polygon-${Date.now()}`,
+      name: polygonData.name || 'Unnamed Area',
+      coordinates: {
+        type: 'Polygon',
+        coordinates: polygonData.coordinates
+      },
+      riskLevel,
+      riskScore,
+      factors,
+      satelliteData: {
+        source: treeCoverData.source || 'Sentinel-2 L2A',
+        imageryDate: new Date(),
+        confidence: treeCoverData.confidence || 75,
+        changeDetected: deforestationData.hasDeforestation || false,
+        treeCoverPercentage: treeCoverData.treeCoverPercentage || 50,
+        historicalComparison: {
+          fiveYearChange: this.calculateHistoricalChange(historicalData, 5),
+          tenYearChange: this.calculateHistoricalChange(historicalData, 10)
+        }
+      },
+      actions: this.determineRequiredActions(riskLevel, factors),
+      metadata: {
+        createdBy: 'system',
+        updatedAt: new Date(),
+        region: settlements[0]?.name || 'Unknown Region',
+        country: 'Unknown',
+        tags: [riskLevel, treeCoverData.source === 'mock' ? 'mock-data' : 'sentinel-hub']
+      }
+    });
+
+    await riskAssessment.save();
+    logger.info(`✅ Risk assessment saved! Using ${treeCoverData.source} data`);
+
+    return riskAssessment;
+  } catch (error) {
+    logger.error('❌ Risk analysis failed:', error);
+    throw error;
   }
+}
 
   calculateDegradationRate(historicalData) {
     if (!historicalData || !historicalData.treeCover || historicalData.treeCover.length < 2) return 0;
