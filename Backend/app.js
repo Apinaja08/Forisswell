@@ -4,6 +4,7 @@ const cors = require("cors");
 const cookieParser = require("cookie-parser");
 const helmet = require("helmet");
 const rateLimit = require("express-rate-limit");
+const connectDB = require("./config/db");
 
 const authRoutes = require("./routes/authRoutes");
 const treeRoutes = require("./routes/treeRoutes");
@@ -35,6 +36,15 @@ app.use(
     crossOriginResourcePolicy: { policy: "cross-origin" },
   })
 );
+
+app.use(async (req, res, next) => {
+  try {
+    await connectDB(); 
+    next();
+  } catch (err) {
+    next(err);
+  }
+});
 
 // Express 5 makes `req.query` read-only (getter-only), so some sanitize libs break.
 // This sanitizer removes Mongo operator injection keys in-place without reassigning req fields.

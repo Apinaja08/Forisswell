@@ -1,33 +1,27 @@
 const mongoose = require("mongoose");
 
-const connectDB = async () => {
-  mongoose.set("bufferCommands", false);
+let isConnected = false;
 
-  const mongoUri = process.env.MONGO_URI;
-  if (!mongoUri) {
-    throw new Error("MONGO_URI is not set");
+const connectDB = async () => {
+  if (isConnected) {
+    console.log("Using existing DB connection");
+    return;
   }
 
   try {
-    await mongoose.connect(mongoUri, {
+    const conn = await mongoose.connect(process.env.MONGO_URI, {
       serverSelectionTimeoutMS: 10000,
       socketTimeoutMS: 45000,
       maxPoolSize: 10,
       family: 4,
     });
 
-    mongoose.connection.on("error", (err) => {
-      console.error("MongoDB runtime error:", err.message);
-    });
+    isConnected = conn.connections[0].readyState === 1;
 
-    mongoose.connection.on("disconnected", () => {
-      console.error("MongoDB disconnected");
-    });
-
-    console.log("MongoDB Connected");
+    console.log("MongoDB Connected ✅");
   } catch (error) {
-    console.error("MongoDB connection failed:", error.message);
-    process.exit(1);
+    console.error("MongoDB connection failed ❌", error.message);
+    throw error;
   }
 };
 
