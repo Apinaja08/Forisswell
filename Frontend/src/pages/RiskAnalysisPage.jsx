@@ -1,16 +1,9 @@
 import { useEffect, useState } from "react";
-import { MapContainer, TileLayer, Polygon, useMap, useMapEvents, ZoomControl, ScaleControl, Marker, Popup } from "react-leaflet";
+import { MapContainer, TileLayer, Polygon, useMap, useMapEvents } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
-
-// Fix for Leaflet marker icons in React
-delete L.Icon.Default.prototype._getIconUrl;
-L.Icon.Default.mergeOptions({
-  iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
-  iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png',
-  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
-});
 import api from "../services/api";
+import { useAuth } from "../hooks/useAuth";
 import LoadingSpinner from "../components/common/LoadingSpinner";
 import SectionHeader from "../components/ui/SectionHeader";
 import Card from "../components/ui/Card";
@@ -47,36 +40,58 @@ function MapClickHandler({ drawing, onMapClick }) {
   return null;
 }
 
+function MapViewportController({ center, zoom }) {
+  const map = useMap();
+
+  useEffect(() => {
+    if (Array.isArray(center) && center.length === 2) {
+      map.setView(center, zoom, { animate: true });
+    }
+  }, [center, zoom, map]);
+
+  return null;
+}
+
+function CurrentLocationMarker({ location }) {
+  const map = useMap();
+
+  useEffect(() => {
+    if (!location) return;
+
+    const marker = L.circleMarker(location, {
+      radius: 8,
+      color: "#2563eb",
+      fillColor: "#60a5fa",
+      fillOpacity: 0.95,
+      weight: 2
+    }).addTo(map);
+
+    marker.bindTooltip("Current location", { direction: "top" });
+
+    return () => {
+      marker.remove();
+    };
+  }, [location, map]);
+
+  return null;
+}
+
 // Custom component to add drawing instructions
 function DrawingInstructions({ drawing }) {
   const map = useMap();
   
   useEffect(() => {
     if (drawing) {
-      const instructionHtml = document.createElement('div');
-      instructionHtml.className = 'drawing-instructions-control';
-      instructionHtml.innerHTML = `
-        <div style="
-          background: linear-gradient(135deg, #22c55e, #16a34a);
-          color: white;
-          padding: 12px 16px;
-          border-radius: 8px;
-          font-size: 14px;
-          font-weight: 600;
-          box-shadow: 0 4px 6px rgba(0,0,0,0.2);
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          border: 2px solid white;
-        ">
-          <span style="font-size: 18px;">✏️</span>
-          <span>Drawing Mode - Click to add points (min 3)</span>
+      const controlDiv = L.DomUtil.create('div', 'drawing-instructions');
+      controlDiv.innerHTML = `
+        <div style="background: rgba(0,0,0,0.8); color: white; padding: 8px 12px; border-radius: 4px; font-size: 14px; font-weight: bold;">
+          ✏️ Drawing Mode Active - Click on map to add points
         </div>
       `;
       
       const customControl = L.Control.extend({
         onAdd: function() {
-          return instructionHtml;
+          return controlDiv;
         },
         onRemove: function() {}
       });
@@ -103,7 +118,7 @@ function DrawingInstructions({ drawing }) {
   return null;
 }
 
-// Custom component to display points with improved styling
+// Custom component to display points
 function DrawingPoints({ points }) {
   const map = useMap();
   
@@ -113,30 +128,14 @@ function DrawingPoints({ points }) {
     const markers = points.map((point, index) => {
       const marker = L.marker([point[1], point[0]], {
         icon: L.divIcon({
-          className: 'drawing-marker-custom',
-          html: `<div style="
-            background: linear-gradient(135deg, #22c55e, #16a34a);
-            color: white;
-            width: 32px;
-            height: 32px;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-weight: bold;
-            font-size: 14px;
-            border: 3px solid white;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.3), inset 0 1px 2px rgba(255,255,255,0.3);
-            transition: transform 0.2s;
-          " onmouseover="this.style.transform='scale(1.2)'" onmouseout="this.style.transform='scale(1)'">${index + 1}</div>`,
-          iconSize: [32, 32],
-          iconAnchor: [16, 16],
-          popupAnchor: [0, -16]
+          className: 'drawing-marker',
+          html: `<div style="background: #22c55e; color: white; width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; border: 2px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.3);">${index + 1}</div>`,
+          iconSize: [24, 24],
+          iconAnchor: [12, 12]
         })
       }).addTo(map);
       
-      marker.bindTooltip(`Point ${index + 1}`, { permanent: true, direction: 'top', offset: [0, -20] });
-      marker.bindPopup(`<div style="text-align: center; font-weight: 600;">Point ${index + 1}<br/><small>${point[1].toFixed(4)}, ${point[0].toFixed(4)}</small></div>`);
+      marker.bindTooltip(`Point ${index + 1}`, { permanent: false, direction: 'top' });
       return marker;
     });
     
@@ -250,6 +249,10 @@ const RiskAnalysisPage = () => {
   const [analysisResult, setAnalysisResult] = useState(null);
   const [mapCenter, setMapCenter] = useState([20, 0]);
   const [mapZoom, setMapZoom] = useState(2);
+  const [currentLocation, setCurrentLocation] = useState(null);
+  const [locationLoading, setLocationLoading] = useState(false);
+  const [manualLat, setManualLat] = useState("");
+  const [manualLng, setManualLng] = useState("");
   
   const [analysisProgress, setAnalysisProgress] = useState(0);
   const [analysisCurrentStep, setAnalysisCurrentStep] = useState("");
@@ -298,9 +301,10 @@ const RiskAnalysisPage = () => {
   const [eventFormSuccess, setEventFormSuccess] = useState("");
   const [eventTagInput, setEventTagInput] = useState("");
 
-  // Get user from localStorage
-  const user = JSON.parse(localStorage.getItem("user") || "{}");
+  // Use auth context instead of direct localStorage reads
+  const { user } = useAuth();
   const isAdmin = user?.role === "admin";
+  const isLoggedIn = !!(user?._id || user?.id);
 
   // Helper function to get polygon centroid
   const getPolygonCentroid = (coordinates) => {
@@ -506,9 +510,13 @@ const RiskAnalysisPage = () => {
         setEventFormSuccess("Event created successfully!");
         
         // Link event to risk
-        await api.post(`/risk/${organizeEventData._id}/link-event`, {
-          eventId: response.data.data._id
-        });
+        try {
+          await api.post(`/risk/${organizeEventData._id}/link-event`, {
+            eventId: response.data.data._id
+          });
+        } catch (linkErr) {
+          console.warn("Could not link event to risk:", linkErr);
+        }
         
         setTimeout(() => {
           setShowOrganizeEventModal(false);
@@ -799,19 +807,31 @@ const RiskAnalysisPage = () => {
     }
   };
 
+  const isPolygonClosed = (coordinates = []) => {
+    if (!coordinates || coordinates.length < 2) return false;
+    const first = coordinates[0];
+    const last = coordinates[coordinates.length - 1];
+    return first[0] === last[0] && first[1] === last[1];
+  };
+
+  const getOpenCoordinates = (coordinates = []) => (
+    isPolygonClosed(coordinates) ? coordinates.slice(0, -1) : coordinates
+  );
+
   const handleMapClick = (e) => {
     if (!analysisForm.drawing) return;
     
     const { lat, lng } = e.latlng;
     setAnalysisForm(prev => ({
       ...prev,
-      coordinates: [...prev.coordinates, [lng, lat]]
+      coordinates: [...getOpenCoordinates(prev.coordinates), [lng, lat]]
     }));
   };
 
   const completePolygon = () => {
-    if (analysisForm.coordinates.length >= 3) {
-      const closedCoordinates = [...analysisForm.coordinates, analysisForm.coordinates[0]];
+    const openCoordinates = getOpenCoordinates(analysisForm.coordinates);
+    if (openCoordinates.length >= 3) {
+      const closedCoordinates = [...openCoordinates, openCoordinates[0]];
       setAnalysisForm(prev => ({
         ...prev,
         drawing: false,
@@ -834,6 +854,62 @@ const RiskAnalysisPage = () => {
   const startDrawing = () => {
     clearPolygon();
     setAnalysisForm(prev => ({ ...prev, drawing: true }));
+    setError("");
+  };
+
+  const useCurrentLocation = () => {
+    if (!navigator.geolocation) {
+      setError("Geolocation is not supported by your browser");
+      return;
+    }
+
+    setLocationLoading(true);
+    setError("");
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const lat = position.coords.latitude;
+        const lng = position.coords.longitude;
+        setCurrentLocation([lat, lng]);
+        setMapCenter([lat, lng]);
+        setMapZoom(15);
+        setManualLat(lat.toFixed(6));
+        setManualLng(lng.toFixed(6));
+        setLocationLoading(false);
+      },
+      (geoError) => {
+        setLocationLoading(false);
+        setError(geoError.message || "Unable to detect current location");
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+    );
+  };
+
+  const handleAddManualCoordinate = () => {
+    const lat = Number.parseFloat(manualLat);
+    const lng = Number.parseFloat(manualLng);
+
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+      setError("Please enter valid latitude and longitude values");
+      return;
+    }
+
+    if (lat < -90 || lat > 90) {
+      setError("Latitude must be between -90 and 90");
+      return;
+    }
+
+    if (lng < -180 || lng > 180) {
+      setError("Longitude must be between -180 and 180");
+      return;
+    }
+
+    setAnalysisForm((prev) => ({
+      ...prev,
+      coordinates: [...getOpenCoordinates(prev.coordinates), [lng, lat]]
+    }));
+    setMapCenter([lat, lng]);
+    setMapZoom((prev) => Math.max(prev, 13));
     setError("");
   };
 
@@ -1260,17 +1336,22 @@ const RiskAnalysisPage = () => {
                 </div>
               </div>
               <div className="flex gap-2">
+                {/* Organize Event - Available to all logged-in users */}
+                {isLoggedIn && (
+                  <button
+                    onClick={() => {
+                      setSelectedRisk(null);
+                      handleOrganizeEvent(selectedRisk);
+                    }}
+                    className="px-3 py-1 text-sm bg-green-500 text-white rounded hover:bg-green-600 transition flex items-center gap-1"
+                  >
+                    <span>🎯</span> Organize Event
+                  </button>
+                )}
+                
+                {/* Edit and Delete - Admin only */}
                 {isAdmin && (
                   <>
-                    <button
-                      onClick={() => {
-                        setSelectedRisk(null);
-                        handleOrganizeEvent(selectedRisk);
-                      }}
-                      className="px-3 py-1 text-sm bg-green-500 text-white rounded hover:bg-green-600 transition flex items-center gap-1"
-                    >
-                      <span>🎯</span> Organize Event
-                    </button>
                     <button
                       onClick={() => {
                         setSelectedRisk(null);
@@ -1486,7 +1567,7 @@ const RiskAnalysisPage = () => {
           title="Forest Risk Analysis Dashboard"
           subtitle="Monitor deforestation, fire risk, and encroachment in forest areas"
           right={
-            isAdmin && (
+            isLoggedIn && (
               <button
                 onClick={() => {
                   setShowAnalysisModal(true);
@@ -1743,7 +1824,9 @@ const RiskAnalysisPage = () => {
                       <div className="text-2xl font-bold shrink-0" style={{ color: COLORS[risk.riskLevel] }}>
                         {risk.riskScore}
                       </div>
-                      {isAdmin && (
+                      
+                      {/* Show organize event button for all logged-in users */}
+                      {isLoggedIn && (
                         <div className="flex gap-1 shrink-0">
                           <button
                             onClick={(e) => {
@@ -1757,30 +1840,36 @@ const RiskAnalysisPage = () => {
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                             </svg>
                           </button>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleEditRisk(risk);
-                            }}
-                            className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded transition"
-                            title="Edit"
-                          >
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                            </svg>
-                          </button>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setDeleteConfirm(risk);
-                            }}
-                            className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition"
-                            title="Delete"
-                          >
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                            </svg>
-                          </button>
+                          
+                          {/* Edit and Delete - Admin only */}
+                          {isAdmin && (
+                            <>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleEditRisk(risk);
+                                }}
+                                className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded transition"
+                                title="Edit"
+                              >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                </svg>
+                              </button>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setDeleteConfirm(risk);
+                                }}
+                                className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition"
+                                title="Delete"
+                              >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                </svg>
+                              </button>
+                            </>
+                          )}
                         </div>
                       )}
                     </div>
@@ -1834,7 +1923,7 @@ const RiskAnalysisPage = () => {
           actionLabel="Start New Analysis"
           actionTo="#"
           onAction={() => {
-            if (isAdmin) {
+            if (isLoggedIn) {
               setShowAnalysisModal(true);
               setAnalysisResult(null);
               clearPolygon();
@@ -1982,37 +2071,72 @@ const RiskAnalysisPage = () => {
 
                   <div>
                     <label className="label">Draw Polygon on Map</label>
-                    <div className="border rounded-lg overflow-hidden shadow-lg" style={{ height: "500px" }}>
+                    <div className="border rounded-lg overflow-hidden" style={{ height: "500px" }}>
                       <MapContainer
                         center={mapCenter}
                         zoom={mapZoom}
                         style={{ height: "100%", width: "100%" }}
-                        zoomControl={false}
-                        scrollWheelZoom={true}
-                        touchZoom={true}
-                        dragging={true}
                       >
                         <TileLayer
                           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                          attribution='&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap</a> contributors'
-                          maxZoom={19}
-                          minZoom={2}
+                          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
                         />
-                        <ZoomControl position="topright" />
-                        <ScaleControl position="bottomleft" />
                         <MapClickHandler 
                           drawing={analysisForm.drawing} 
                           onMapClick={handleMapClick}
                         />
+                        <MapViewportController center={mapCenter} zoom={mapZoom} />
                         <DrawingInstructions drawing={analysisForm.drawing} />
                         <DrawingPoints points={analysisForm.coordinates} />
+                        <CurrentLocationMarker location={currentLocation} />
                         {analysisForm.coordinates.length > 0 && (
                           <Polygon
                             positions={analysisForm.coordinates.map(coord => [coord[1], coord[0]])}
-                            pathOptions={{ color: "#22c55e", weight: 3, fillColor: "#dcfce7", fillOpacity: 0.4 }}
+                            pathOptions={{ color: "#22c55e", weight: 3, fillColor: "#22c55e", fillOpacity: 0.2 }}
                           />
                         )}
                       </MapContainer>
+                    </div>
+
+                    <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-3">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={useCurrentLocation}
+                          disabled={locationLoading}
+                          className="btn-secondary"
+                        >
+                          {locationLoading ? "Detecting..." : "Use Current Location"}
+                        </button>
+                        <span className="text-xs text-slate-500">
+                          Jump map to your current location for faster point selection.
+                        </span>
+                      </div>
+                      <div className="grid gap-2 sm:grid-cols-3">
+                        <input
+                          type="number"
+                          step="any"
+                          className="input"
+                          placeholder="Latitude (e.g., 6.9271)"
+                          value={manualLat}
+                          onChange={(e) => setManualLat(e.target.value)}
+                        />
+                        <input
+                          type="number"
+                          step="any"
+                          className="input"
+                          placeholder="Longitude (e.g., 79.8612)"
+                          value={manualLng}
+                          onChange={(e) => setManualLng(e.target.value)}
+                        />
+                        <button
+                          type="button"
+                          onClick={handleAddManualCoordinate}
+                          className="btn-primary"
+                        >
+                          Add Coordinate Point
+                        </button>
+                      </div>
                     </div>
                     
                     <div className="mt-3 flex gap-2 flex-wrap">
@@ -2051,12 +2175,12 @@ const RiskAnalysisPage = () => {
                     {analysisForm.coordinates.length > 0 && (
                       <div className="mt-2 p-3 bg-slate-50 rounded-lg">
                         <div className="text-sm font-medium text-slate-700 mb-1">
-                          Polygon Points: {analysisForm.coordinates.length - (analysisForm.coordinates.length > 3 && analysisForm.coordinates[analysisForm.coordinates.length - 1] === analysisForm.coordinates[0] ? 1 : 0)} points
+                          Polygon Points: {getOpenCoordinates(analysisForm.coordinates).length} points
                         </div>
                         <div className="text-xs text-slate-500">
-                          {analysisForm.coordinates.length >= 3 ? 
+                          {getOpenCoordinates(analysisForm.coordinates).length >= 3 ? 
                             "✓ Ready for analysis" : 
-                            `Need ${3 - analysisForm.coordinates.length} more point(s) to create a valid polygon`}
+                            `Need ${3 - getOpenCoordinates(analysisForm.coordinates).length} more point(s) to create a valid polygon`}
                         </div>
                         {analysisForm.drawing && (
                           <div className="text-xs text-blue-600 mt-1">

@@ -13,140 +13,133 @@ class RiskAnalysisService {
 
   async analyzeArea(polygonData) {
     try {
-      logger.info(`Analyzing area: ${polygonData.name || 'unnamed'}`);
+      logger.info(`========================================`);
+      logger.info(`Starting risk analysis for: ${polygonData.name || 'unnamed'}`);
+      logger.info(`========================================`);
 
-      // Extract coordinates - handle both formats
+      // Extract coordinates
       let coordinates = polygonData.coordinates;
-      
-      // If coordinates is a GeoJSON polygon coordinates array, extract the first ring for services
       let coordinatesForServices = coordinates;
+      
       if (Array.isArray(coordinates[0]) && Array.isArray(coordinates[0][0])) {
-        // It's already in the right format for Sentinel Hub
         coordinatesForServices = coordinates;
       } else if (Array.isArray(coordinates[0]) && coordinates[0].length === 2) {
-        // It's a simple ring, wrap it for Sentinel Hub
         coordinatesForServices = [coordinates];
       }
 
-      // Create a standardized polygon object for Overpass service
+      logger.info(`Fetching tree cover data from Sentinel Hub...`);
+      
+      // Get tree cover data directly
+      const treeCoverData = await sentinelHubService.analyzeTreeCover(coordinatesForServices);
+      
+      logger.info(`Tree cover data received:`, {
+        source: treeCoverData.source,
+        treeCoverPercentage: treeCoverData.treeCoverPercentage,
+        ndviMean: treeCoverData.ndviMean
+      });
+      
+      // Get deforestation data
+      const deforestationData = await sentinelHubService.detectDeforestation(coordinatesForServices);
+      
+      logger.info(`Deforestation data:`, {
+        source: deforestationData.source,
+        hasDeforestation: deforestationData.hasDeforestation
+      });
+      
+      // Get historical data
+      const historicalData = await sentinelHubService.getHistoricalTrends(coordinatesForServices);
+      
+      // Get encroachment risk
       const standardizedPolygon = {
         ...polygonData,
         coordinates: coordinatesForServices
       };
+      const encroachmentRisk = await overpassService.calculateEncroachmentRisk(standardizedPolygon);
+      
+      // Get nearby settlements
+      const settlements = await overpassService.getNearbySettlements(coordinatesForServices);
+      
+      logger.info(`All data fetched successfully`);
 
-      logger.info(`Using coordinates format: ${Array.isArray(coordinatesForServices[0][0]) ? 'GeoJSON' : 'Simple'}`);
-
-      // ── All data fetched in parallel ──────────────────────────
-      const [
-        treeCoverData,
-        deforestationData,
-        historicalData,
-        encroachmentRisk,
-        settlements
-      ] = await Promise.allSettled([
-        sentinelHubService.analyzeTreeCover(coordinatesForServices),
-        sentinelHubService.detectDeforestation(coordinatesForServices),
-        sentinelHubService.getHistoricalTrends(coordinatesForServices),
-        overpassService.calculateEncroachmentRisk(standardizedPolygon),
-        overpassService.getNearbySettlements(coordinatesForServices)
-      ]);
-
-      // Process results with fallbacks
-      const processedTreeCover = this.processResult(treeCoverData, sentinelHubService.getMockTreeCoverData());
-      const processedDeforestation = this.processResult(deforestationData, sentinelHubService.getMockDeforestationData());
-      const processedHistorical = this.processResult(historicalData, sentinelHubService.getMockHistoricalData());
-      const processedEncroachment = encroachmentRisk.status === 'fulfilled' ? encroachmentRisk.value : 20;
-      const processedSettlements = settlements.status === 'fulfilled' ? settlements.value : [];
-
-      // Log if we're using mock data
-      if (processedTreeCover.source === 'mock') {
-        logger.warn('Using mock tree cover data');
-      }
-      if (processedDeforestation.source === 'mock') {
-        logger.warn('Using mock deforestation data');
-      }
-
-      // ── Risk factor calculation ───────────────────────────────
+      // Calculate risk factors
       const factors = {
-        treeCoverLoss: Math.max(0, 100 - (processedTreeCover.treeCoverPercentage || 50)),
-        degradationRate: this.calculateDegradationRate(processedHistorical),
-        fireRisk: this.calculateFireRisk(processedHistorical),
-        encroachmentRisk: processedEncroachment || 20,
-        illegalLoggingProbability: processedDeforestation.hasDeforestation ? 75 : 15
+        treeCoverLoss: Math.max(0, 100 - (treeCoverData.treeCoverPercentage || 50)),
+        degradationRate: this.calculateDegradationRate(historicalData),
+        fireRisk: this.calculateFireRisk(historicalData),
+        encroachmentRisk: typeof encroachmentRisk === 'number' ? encroachmentRisk : 25,
+        illegalLoggingProbability: deforestationData.hasDeforestation ? 75 : 15
       };
+
+      logger.info(`📈 Risk factors:`, factors);
 
       const riskScore = this.calculateOverallRisk(factors);
       const riskLevel = this.calculateRiskLevel(riskScore);
 
-      // ── Build and save risk assessment ────────────────────────
+      logger.info(`🎯 Overall risk: ${riskLevel.toUpperCase()} (Score: ${riskScore})`);
+
+      // Build region info from settlements
+      let region = 'Unknown Region';
+      let country = 'Unknown';
+      if (settlements && settlements.length > 0 && settlements[0]) {
+        region = settlements[0].name || 'Unknown Region';
+      }
+
+      // Create risk assessment
       const riskAssessment = new Risk({
         polygonId: polygonData.id || `polygon-${Date.now()}`,
         name: polygonData.name || 'Unnamed Area',
         coordinates: {
           type: 'Polygon',
-          coordinates: polygonData.coordinates // Store original format
+          coordinates: polygonData.coordinates
         },
         riskLevel,
         riskScore,
         factors,
         satelliteData: {
-          source: processedTreeCover.source || 'Sentinel-2 L2A',
+          source: treeCoverData.source || 'Sentinel-2 L2A',
           imageryDate: new Date(),
-          confidence: processedTreeCover.confidence || 75,
-          changeDetected: processedDeforestation.hasDeforestation || false,
-          treeCoverPercentage: processedTreeCover.treeCoverPercentage || 50,
+          confidence: treeCoverData.confidence || 75,
+          changeDetected: deforestationData.hasDeforestation || false,
+          treeCoverPercentage: treeCoverData.treeCoverPercentage || 50,
           historicalComparison: {
-            fiveYearChange: this.calculateHistoricalChange(processedHistorical, 5),
-            tenYearChange: this.calculateHistoricalChange(processedHistorical, 10)
+            fiveYearChange: this.calculateHistoricalChange(historicalData, 5),
+            tenYearChange: this.calculateHistoricalChange(historicalData, 10)
           }
         },
         actions: this.determineRequiredActions(riskLevel, factors),
         metadata: {
           createdBy: 'system',
           updatedAt: new Date(),
-          region: processedSettlements[0]?.name || 'Unknown Region',
-          tags: [riskLevel, processedTreeCover.source === 'mock' ? 'mock-data' : 'sentinel-hub']
+          region: region,
+          country: country,
+          tags: [riskLevel, treeCoverData.source === 'mock' ? 'mock-data' : 'sentinel-hub']
         }
       });
 
       await riskAssessment.save();
-      logger.info(`Risk saved: ${riskAssessment.name} [${riskLevel}] score=${riskScore}`);
-
-      if (global.io) {
-        global.io.emit('risk-update', {
-          id: riskAssessment._id,
-          name: riskAssessment.name,
-          riskLevel: riskAssessment.riskLevel,
-          riskScore: riskAssessment.riskScore,
-          timestamp: new Date()
-        });
-      }
+      logger.info(`✅ Risk assessment saved successfully! ID: ${riskAssessment._id}`);
+      logger.info(`   Using ${treeCoverData.source === 'mock' ? 'MOCK' : 'REAL'} data from ${treeCoverData.source}`);
 
       return riskAssessment;
     } catch (error) {
-      logger.error('Risk analysis failed:', error);
+      logger.error('❌ Risk analysis failed:', error);
       throw error;
     }
-  }
-
-  processResult(result, mockData) {
-    if (result.status === 'fulfilled' && result.value) {
-      return result.value;
-    }
-    return mockData;
   }
 
   calculateDegradationRate(historicalData) {
     if (!historicalData || !historicalData.treeCover || historicalData.treeCover.length < 2) return 0;
     const recent = historicalData.treeCover[0] || 50;
     const old = historicalData.treeCover[historicalData.treeCover.length - 1] || 50;
-    return Math.max(0, Math.min(100, ((old - recent) / old) * 100));
+    const rate = Math.max(0, Math.min(100, ((old - recent) / old) * 100));
+    return rate;
   }
 
   calculateFireRisk(historicalData) {
     if (!historicalData || !historicalData.ndvi || historicalData.ndvi.length === 0) return 40;
     const avgNdvi = historicalData.ndvi.reduce((a, b) => a + b, 0) / historicalData.ndvi.length;
-    return Math.min(100, Math.round(Math.max(0, (0.8 - avgNdvi) / 0.8) * 100));
+    const risk = Math.min(100, Math.round(Math.max(0, (0.8 - avgNdvi) / 0.8) * 100));
+    return risk;
   }
 
   calculateHistoricalChange(historicalData, years) {
@@ -165,6 +158,7 @@ class RiskAnalysisService {
       encroachmentRisk: 0.15,
       illegalLoggingProbability: 0.10
     };
+    
     let weightedSum = 0;
     for (const [factor, value] of Object.entries(factors)) {
       weightedSum += (value * (weights[factor] || 0));
@@ -174,35 +168,50 @@ class RiskAnalysisService {
 
   determineRequiredActions(riskLevel, factors) {
     const actions = [];
-    if (riskLevel === 'critical' || riskLevel === 'high') {
+    
+    if (riskLevel === 'critical') {
       actions.push({ 
         type: 'alert', 
         status: 'pending', 
         triggeredAt: new Date(),
-        notes: `Urgent: ${riskLevel.toUpperCase()} risk detected` 
+        notes: 'CRITICAL: Immediate intervention required!' 
+      });
+      actions.push({ 
+        type: 'inspection', 
+        status: 'pending', 
+        triggeredAt: new Date(),
+        notes: 'Emergency field inspection required within 24 hours' 
       });
       if (factors.illegalLoggingProbability > 70) {
         actions.push({ 
           type: 'legal_notification', 
           status: 'pending', 
           triggeredAt: new Date(),
-          notes: 'Possible illegal logging activity detected' 
+          notes: 'Potential illegal activity - notify authorities' 
         });
       }
+    } else if (riskLevel === 'high') {
+      actions.push({ 
+        type: 'alert', 
+        status: 'pending', 
+        triggeredAt: new Date(),
+        notes: 'HIGH risk - schedule intervention' 
+      });
       actions.push({ 
         type: 'inspection', 
         status: 'pending', 
         triggeredAt: new Date(),
-        notes: 'Immediate field inspection required' 
+        notes: 'Field inspection recommended within 1 week' 
       });
     } else if (riskLevel === 'medium' && factors.fireRisk > 60) {
       actions.push({ 
         type: 'alert', 
         status: 'pending', 
         triggeredAt: new Date(),
-        notes: 'Elevated fire risk detected' 
+        notes: 'Elevated fire risk - monitor closely' 
       });
     }
+    
     return actions;
   }
 }

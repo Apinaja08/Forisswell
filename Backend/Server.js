@@ -12,7 +12,7 @@ const alertService = require("./services/alertService");
 // PWA Push Notifications disabled - user preference
 // const pushNotificationService = require("./services/pushNotificationService");
 
-const preferredPort = Number.parseInt(process.env.PORT || "5000", 10);
+const preferredPort = Number.parseInt(process.env.PORT || "5001", 10);
 
 const listen = (port, server) =>
   new Promise((resolve, reject) => {
